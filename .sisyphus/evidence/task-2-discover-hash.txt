@@ -1,0 +1,10 @@
+# Task 2 discover_files Hash Evidence
+
+## Scenario 2: discover_files includes file_hash
+
+```
+$ python3 -c "from src.scanner import discover_files; files = discover_files('tests/fixtures'); print(files[0].keys() if files else 'no files')"
+dict_keys(['path', 'extension', 'language', 'grammar', 'file_hash'])
+```
+
+Result: PASS - file_hash key present in output dicts

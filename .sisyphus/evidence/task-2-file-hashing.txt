@@ -1,0 +1,17 @@
+# Task 2 File Hashing Evidence
+
+## Scenario 1: File hashing works
+
+### Test 1a: Hash returns 16-char hex string
+```
+$ python3 -c "from src.scanner import compute_file_hash; from pathlib import Path; import tempfile, os; f = tempfile.NamedTemporaryFile(delete=False, suffix='.js'); f.write(b'test content'); f.close(); h = compute_file_hash(Path(f.name)); print(f'hash={h}, len={len(h)}'); os.unlink(f.name)"
+hash=6ae8a75555209fd6, len=16
+```
+Result: PASS - 16-character hex string returned
+
+### Test 1b: Unreadable file returns empty string
+```
+$ python3 -c "from src.scanner import compute_file_hash; from pathlib import Path; h = compute_file_hash(Path('/nonexistent/file.js')); print(f'result={repr(h)}')"
+result=''
+```
+Result: PASS - empty string returned for non-existent file

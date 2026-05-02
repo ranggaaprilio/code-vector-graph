@@ -1,0 +1,34 @@
+# Task 2 Tests Evidence
+
+## Scenario 3: Tests pass
+
+```
+$ python3 -m pytest tests/test_scanner.py -v
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.0.3, pluggy-1.6.0
+cachedir: .pytest_cache
+rootdir: /mnt/67d4d7f3-61de-432a-b22a-136ed1cf1c9b/Code/Python/codeVectorGraph
+plugins: anyio-4.2.0
+collecting ... collected 16 items
+
+tests/test_scanner.py::TestIsBinary::test_binary_file_detected PASSED    [  6%]
+tests/test_scanner.py::TestIsBinary::test_text_file_not_binary PASSED    [ 12%]
+tests/test_scanner.py::TestDiscoverFiles::test_discovers_js_files PASSED [ 18%]
+tests/test_scanner.py::TestDiscoverFiles::test_discovers_ts_files PASSED [ 25%]
+tests/test_scanner.py::TestDiscoverFiles::test_discovers_tsx_files PASSED [ 31%]
+tests/test_scanner.py::TestDiscoverFiles::test_returns_correct_metadata PASSED [ 37%]
+tests/test_scanner.py::TestDiscoverFiles::test_skips_node_modules PASSED [ 43%]
+tests/test_scanner.py::TestDiscoverFiles::test_skips_binary_files PASSED [ 50%]
+tests/test_scanner.py::TestDiscoverFiles::test_skips_unsupported_extensions PASSED [ 56%]
+tests/test_scanner.py::TestDiscoverFiles::test_results_sorted PASSED     [ 62%]
+tests/test_scanner.py::TestSkipDirs::test_skip_dirs_defined PASSED       [ 68%]
+tests/test_scanner.py::TestComputeFileHash::test_hash_returns_16_chars PASSED [ 75%]
+tests/test_scanner.py::TestComputeFileHash::test_hash_same_for_same_content PASSED [ 81%]
+tests/test_scanner.py::TestComputeFileHash::test_hash_different_for_different_content PASSED [ 87%]
+tests/test_scanner.py::TestComputeFileHash::test_unreadable_file_returns_empty_string PASSED [ 93%]
+tests/test_scanner.py::TestDiscoverFilesFileHash::test_file_hash_key_present PASSED [100%]
+
+============================== 16 passed in 0.04s ==============================
+```
+
+Result: PASS - All 16 tests passed

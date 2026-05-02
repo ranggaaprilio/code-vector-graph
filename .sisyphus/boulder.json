@@ -1,0 +1,61 @@
+{
+  "active_plan": "/mnt/67d4d7f3-61de-432a-b22a-136ed1cf1c9b/Code/Python/codeVectorGraph/.sisyphus/plans/embedding-backend-selection.md",
+  "started_at": "2026-05-01T11:48:00.000Z",
+  "session_ids": [
+    "ses_21cd446e8ffe2ViDKR1PZAXRNQ",
+    "ses_21c8e1f75ffe6LwFNKK9sxCBpT"
+  ],
+  "session_origins": {
+    "ses_21cd446e8ffe2ViDKR1PZAXRNQ": "direct",
+    "ses_21c8e1f75ffe6LwFNKK9sxCBpT": "/start-work"
+  },
+  "plan_name": "embedding-backend-selection",
+  "agent": "atlas",
+  "task_sessions": {
+    "todo:1": {
+      "task_key": "todo:1",
+      "task_label": "1",
+      "task_title": "Update config.py with provider constants and requirements.txt",
+      "session_id": "ses_21c8c5bb3ffekwQlzmcBhhDp6x",
+      "agent": "Sisyphus-Junior",
+      "category": "quick",
+      "updated_at": "2026-05-01T12:13:47.397Z"
+    },
+    "todo:3": {
+      "task_key": "todo:3",
+      "task_label": "3",
+      "task_title": "Implement OllamaEmbedder (refactor from CodeEmbedder)",
+      "session_id": "ses_21c89b4f4ffeFEpq24208K57iV",
+      "agent": "Sisyphus-Junior",
+      "category": "unspecified-high",
+      "updated_at": "2026-05-01T12:20:51.953Z"
+    },
+    "todo:7": {
+      "task_key": "todo:7",
+      "task_label": "7",
+      "task_title": "Update main.py for factory + conditional health check + dimension passing",
+      "session_id": "ses_21c83286affe8FcDFlAO7Nh67k",
+      "agent": "Sisyphus-Junior",
+      "category": "unspecified-high",
+      "updated_at": "2026-05-01T12:23:40.556Z"
+    },
+    "todo:8": {
+      "task_key": "todo:8",
+      "task_label": "8",
+      "task_title": "Add/update tests for both backends",
+      "session_id": "ses_21c80d668ffeE0C0DoSfiZxq0H",
+      "agent": "Sisyphus-Junior",
+      "category": "unspecified-high",
+      "updated_at": "2026-05-01T12:38:40.410Z"
+    },
+    "final-wave:f1": {
+      "task_key": "final-wave:f1",
+      "task_label": "F1",
+      "task_title": "Plan Compliance Audit — oracle",
+      "session_id": "ses_21c71c394ffeLpQEhgpaGEK3Or",
+      "agent": "Sisyphus-Junior",
+      "category": "unspecified-high",
+      "updated_at": "2026-05-01T12:44:10.764Z"
+    }
+  }
+}

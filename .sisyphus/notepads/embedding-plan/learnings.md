@@ -1,0 +1,6 @@
+- Implemented HuggingFaceEmbedder for Salesforce/codet5p-110m-embedding using transformers.
+- Ensured CPU-only execution by default and trust_remote_code=True for model loading.
+- Added mean-pooling with attention masking and L2 normalization to produce 256-d vector embeddings.
+- Implemented chunk embedding with batching and truncation warning when tokens > 512.
+- Provided embed_query, check_health, and get_dimensions implementations.
+- Added create_embedder factory support for 'huggingface'.

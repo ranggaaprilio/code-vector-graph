@@ -1,0 +1,4 @@
+- Decision: Load HuggingFace model with trust_remote_code=True as requested.
+- Decision: Use mean pooling with attention masking for robust embeddings.
+- Decision: Maintain 256-dimension outputs to align with config.
+- Decision: Do not prefix embeddings for HuggingFace (unlike Ollama).

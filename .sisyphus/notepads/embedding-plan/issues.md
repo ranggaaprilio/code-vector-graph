@@ -1,0 +1,3 @@
+- Potential heavy download time for loading Salesforce/codet5p-110m-embedding via transformers.
+- CPU-only mode may be slower on large batches; consider batching strategy adjustments.
+- Ensure network access for model weights or provide offline caching strategy.
