@@ -13,7 +13,7 @@ def test_supported_extensions():
 
 
 def test_embedding_dimensions_value():
-    assert EMBEDDING_DIMENSIONS == 3584
+    assert EMBEDDING_DIMENSIONS == 1536
 
 
 def test_comment_node_types_is_tuple_with_three_elements():

@@ -267,7 +267,7 @@ class TestChunkStorage:
             {
                 "file_path": f"{test_repo}/test.js",
                 "chunk_index": 0,
-                "embedding": [0.1] * 3584,
+                "embedding": [0.1] * 1536,
                 "language": "javascript",
                 "start_line": 1,
                 "end_line": 5,
@@ -278,7 +278,7 @@ class TestChunkStorage:
             {
                 "file_path": f"{test_repo}/test.js",
                 "chunk_index": 1,
-                "embedding": [0.2] * 3584,
+                "embedding": [0.2] * 1536,
                 "language": "javascript",
                 "start_line": 7,
                 "end_line": 9,

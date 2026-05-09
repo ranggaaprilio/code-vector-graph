@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Download nomic-ai/nomic-embed-code model from Hugging Face."""
+"""Download jinaai/jina-code-embeddings-1.5b model from Hugging Face."""
 
 import os
 
@@ -9,27 +9,27 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Set cache directory and HF token for authenticated requests
-os.environ['HF_HOME'] = os.path.expanduser('~/.cache/huggingface')
+os.environ["HF_HOME"] = os.path.expanduser("~/.cache/huggingface")
 
 # Get HF token from environment (loaded from .env file)
-hf_token = os.getenv('HF_TOKEN')
+hf_token = os.getenv("HF_TOKEN")
 if not hf_token:
     raise ValueError(
         "HF_TOKEN not found. Please set it in your .env file. "
         "Copy .env.example to .env and add your HuggingFace token."
     )
-os.environ['HF_TOKEN'] = hf_token
+os.environ["HF_TOKEN"] = hf_token
 
 import torch
 from transformers import AutoModel, AutoTokenizer
 
-model_name = "nomic-ai/nomic-embed-code"
+model_name = "jinaai/jina-code-embeddings-1.5b"
 print(f"Downloading {model_name}...")
 
 # Step 1: Download tokenizer
 print("Downloading tokenizer...")
 tokenizer = AutoTokenizer.from_pretrained(
-    model_name, trust_remote_code=True, token=os.environ['HF_TOKEN']
+    model_name, trust_remote_code=True, token=os.environ["HF_TOKEN"]
 )
 print("✓ Tokenizer downloaded")
 
@@ -37,9 +37,7 @@ print("✓ Tokenizer downloaded")
 print("Downloading model (this may take a few minutes)...")
 try:
     model = AutoModel.from_pretrained(
-        model_name,
-        trust_remote_code=True,
-        token=os.environ['HF_TOKEN']
+        model_name, trust_remote_code=True, token=os.environ["HF_TOKEN"]
     )
     print("✓ Model downloaded successfully")
 
@@ -49,9 +47,9 @@ try:
     with torch.no_grad():
         output = model(**test_input)
     # Handle different output formats
-    if hasattr(output, 'last_hidden_state'):
+    if hasattr(output, "last_hidden_state"):
         print(f"✓ Model works! Output shape: {output.last_hidden_state.shape}")
-    elif hasattr(output, 'pooler_output'):
+    elif hasattr(output, "pooler_output"):
         print(f"✓ Model works! Output shape: {output.pooler_output.shape}")
     elif isinstance(output, torch.Tensor):
         print(f"✓ Model works! Output shape: {output.shape}")
@@ -62,8 +60,8 @@ except Exception as e:
     print(f"✗ Error loading model: {e}")
     raise
 
-print("\n" + "="*60)
+print("\n" + "=" * 60)
 print("SUCCESS! Model is ready to use.")
-print("="*60)
+print("=" * 60)
 print("\nYou can now use the HuggingFace embedding provider:")
-print(f'  python main.py --repo-path /path/to/repo --embedding-provider huggingface')
+print(f"  python main.py --repo-path /path/to/repo --embedding-provider huggingface")

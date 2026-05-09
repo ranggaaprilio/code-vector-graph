@@ -36,7 +36,7 @@ def load_tokenizer(tokenizer_name: str = "bert-base-uncased"):
 
     Args:
         tokenizer_name: Name of the tokenizer model to load (e.g., 'bert-base-uncased',
-                       'nomic-ai/nomic-embed-code')
+                       'jinaai/jina-code-embeddings-1.5b')
 
     Returns:
         Tokenizer instance or DummyTokenizer fallback

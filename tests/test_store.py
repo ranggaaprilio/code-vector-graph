@@ -13,7 +13,7 @@ def in_memory_store():
     store = VectorStore(
         collection_name="test_collection",
         qdrant_url=":memory:",
-        embedding_dimensions=768,
+        embedding_dimensions=1536,
     )
     return store
 
@@ -25,7 +25,7 @@ def sample_chunks():
         {
             "file_path": "/test/file1.js",
             "chunk_index": 0,
-            "embedding": [0.1] * 768,
+            "embedding": [0.1] * 1536,
             "language": "javascript",
             "start_line": 1,
             "end_line": 10,
@@ -36,7 +36,7 @@ def sample_chunks():
         {
             "file_path": "/test/file1.js",
             "chunk_index": 1,
-            "embedding": [0.2] * 768,
+            "embedding": [0.2] * 1536,
             "language": "javascript",
             "start_line": 11,
             "end_line": 20,
@@ -47,7 +47,7 @@ def sample_chunks():
         {
             "file_path": "/test/file2.ts",
             "chunk_index": 0,
-            "embedding": [0.3] * 768,
+            "embedding": [0.3] * 1536,
             "language": "typescript",
             "start_line": 1,
             "end_line": 5,
@@ -65,7 +65,7 @@ class TestVectorStoreInit:
         """Test initialization with default parameters."""
         store = VectorStore()
         assert store.collection_name == "code_chunks"
-        assert store.embedding_dimensions == 3584
+        assert store.embedding_dimensions == 1536
 
     def test_init_with_custom_params(self):
         """Test initialization with custom parameters."""
@@ -94,13 +94,13 @@ class TestCreateCollection:
     """Test collection creation."""
 
     def test_create_collection_with_correct_params(self, in_memory_store):
-        """Test collection is created with 768 dimensions and COSINE distance."""
+        """Test collection is created with 1536 dimensions and COSINE distance."""
         in_memory_store.create_collection()
 
         info = in_memory_store.client.get_collection("test_collection")
         config = info.config.params.vectors
 
-        assert config.size == 768
+        assert config.size == 1536
         assert config.distance == Distance.COSINE
 
     def test_create_collection_idempotent(self, in_memory_store):
@@ -156,7 +156,7 @@ class TestUpsertChunks:
             {
                 "file_path": f"/test/file{i}.js",
                 "chunk_index": 0,
-                "embedding": [0.1] * 768,
+                "embedding": [0.1] * 1536,
                 "language": "javascript",
                 "start_line": 1,
                 "end_line": 10,

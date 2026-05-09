@@ -15,6 +15,17 @@ from .config import (
 
 logger = logging.getLogger(__name__)
 
+JINA_TASK_PREFIXES = {
+    "code2code": {
+        "query": "Find an equivalent code snippet given the following code snippet:\n",
+        "passage": "Candidate code snippet:\n",
+    },
+    "nl2code": {
+        "query": "Find the most relevant code snippet given the following query:\n",
+        "passage": "Candidate code snippet:\n",
+    },
+}
+
 
 class Embedder(ABC):
     """Abstract base class for embedding providers."""
@@ -57,7 +68,7 @@ class HuggingFaceEmbedder(Embedder):
             )
             self.model = AutoModel.from_pretrained(
                 self.model_name, trust_remote_code=True, local_files_only=True,
-                torch_dtype=torch.float16,
+                torch_dtype=torch.bfloat16,
             )
         except Exception as e:
             logger.error(f"Failed to load HuggingFace model '{self.model_name}': {e}")
@@ -108,6 +119,9 @@ class HuggingFaceEmbedder(Embedder):
                 texts.append(ch["text"])
             else:
                 texts.append(str(ch))
+
+        # Prepend Jina task-specific prefix for code2code passage embedding
+        texts = [JINA_TASK_PREFIXES["code2code"]["passage"] + t for t in texts]
 
         logger.info(f"Checking {len(texts)} chunks for token truncation...")
         truncated_count = self._token_truncation_warnings(texts)
@@ -180,6 +194,8 @@ class HuggingFaceEmbedder(Embedder):
         return result_chunks
 
     def embed_query(self, query: str) -> list[float]:
+        # Prepend Jina task-specific prefix for nl2code query embedding
+        query = JINA_TASK_PREFIXES["nl2code"]["query"] + query
         inputs = self.tokenizer(
             query,
             padding=True,

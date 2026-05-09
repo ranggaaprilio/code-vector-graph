@@ -16,14 +16,14 @@ DEFAULT_CHUNK_SIZE = 400
 DEFAULT_CHUNK_OVERLAP = 64
 DEFAULT_QDRANT_URL = "http://localhost:6333"
 DEFAULT_COLLECTION_NAME = "code_chunks"
-DEFAULT_MODEL = "nomic-ai/nomic-embed-code"
-EMBEDDING_DIMENSIONS = 3584
-TOKENIZER_NAME = "nomic-ai/nomic-embed-code"
+DEFAULT_MODEL = "jinaai/jina-code-embeddings-1.5b"
+EMBEDDING_DIMENSIONS = 1536
+TOKENIZER_NAME = "jinaai/jina-code-embeddings-1.5b"
 
 EMBEDDING_PROVIDERS = {
     "huggingface": {
-        "model": "nomic-ai/nomic-embed-code",
-        "dimensions": 3584,
+        "model": "jinaai/jina-code-embeddings-1.5b",
+        "dimensions": 1536,
     },
 }
 DEFAULT_PROVIDER = "huggingface"

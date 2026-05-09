@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import torch
 
-from src.embedder import HuggingFaceEmbedder, create_embedder
+from src.embedder import HuggingFaceEmbedder, create_embedder, JINA_TASK_PREFIXES
 
 
 class TestHuggingFaceEmbedderInit:
@@ -19,7 +19,7 @@ class TestHuggingFaceEmbedderInit:
 
         embedder = HuggingFaceEmbedder()
 
-        assert embedder.model_name == "nomic-ai/nomic-embed-code"
+        assert embedder.model_name == "jinaai/jina-code-embeddings-1.5b"
         assert embedder.device == "cpu"
         mock_model.eval.assert_called_once()
 
@@ -65,7 +65,7 @@ class TestHuggingFaceEmbedderEmbedChunks:
         def mock_forward(**kwargs):
             batch_size = kwargs["input_ids"].shape[0]
             output = MagicMock()
-            output.last_hidden_state = torch.randn(batch_size, 10, 3584)
+            output.last_hidden_state = torch.randn(batch_size, 10, 1536)
             return output
 
         mock_model.side_effect = mock_forward
@@ -75,12 +75,12 @@ class TestHuggingFaceEmbedderEmbedChunks:
         assert len(result) == 2
         assert "embedding" in result[0]
         assert "embedding" in result[1]
-        assert len(result[0]["embedding"]) == 3584
-        assert len(result[1]["embedding"]) == 3584
+        assert len(result[0]["embedding"]) == 1536
+        assert len(result[1]["embedding"]) == 1536
 
     @patch("src.embedder.AutoTokenizer")
     @patch("src.embedder.AutoModel")
-    def test_embed_chunks_no_prefix(self, mock_model_class, mock_tokenizer_class):
+    def test_embed_chunks_prepends_passage_prefix(self, mock_model_class, mock_tokenizer_class):
         mock_tokenizer = MagicMock()
         mock_model = MagicMock()
         mock_tokenizer_class.from_pretrained.return_value = mock_tokenizer
@@ -97,13 +97,15 @@ class TestHuggingFaceEmbedderEmbedChunks:
         mock_tokenizer.return_value = mock_inputs
 
         mock_outputs = MagicMock()
-        mock_outputs.last_hidden_state = torch.randn(1, 3, 3584)
+        mock_outputs.last_hidden_state = torch.randn(1, 3, 1536)
         mock_model.return_value = mock_outputs
 
         embedder.embed_chunks(chunks)
 
         call_args = mock_tokenizer.call_args
-        assert "search_document" not in str(call_args)
+        expected_prefix = JINA_TASK_PREFIXES["code2code"]["passage"]
+        passed_texts = call_args[0][0] if call_args[0] else call_args[1].get("texts", [])
+        assert passed_texts[0].startswith(expected_prefix)
 
     @patch("src.embedder.AutoTokenizer")
     @patch("src.embedder.AutoModel")
@@ -138,7 +140,7 @@ class TestHuggingFaceEmbedderEmbedChunks:
         mock_tokenizer.return_value = mock_inputs
 
         mock_outputs = MagicMock()
-        mock_outputs.last_hidden_state = torch.randn(1, 3, 3584)
+        mock_outputs.last_hidden_state = torch.randn(1, 3, 1536)
         mock_model.return_value = mock_outputs
 
         result = embedder.embed_chunks(chunks)
@@ -165,26 +167,54 @@ class TestHuggingFaceEmbedderEmbedQuery:
         mock_tokenizer.return_value = mock_inputs
 
         mock_outputs = MagicMock()
-        mock_outputs.last_hidden_state = torch.randn(1, 3, 3584)
+        mock_outputs.last_hidden_state = torch.randn(1, 3, 1536)
         mock_model.return_value = mock_outputs
 
         result = embedder.embed_query("test query")
 
         assert isinstance(result, list)
-        assert len(result) == 3584
+        assert len(result) == 1536
 
-
-class TestHuggingFaceEmbedderDimensions:
     @patch("src.embedder.AutoTokenizer")
     @patch("src.embedder.AutoModel")
-    def test_get_dimensions_returns_3584(self, mock_model_class, mock_tokenizer_class):
+    def test_embed_query_prepends_query_prefix(self, mock_model_class, mock_tokenizer_class):
         mock_tokenizer = MagicMock()
         mock_model = MagicMock()
         mock_tokenizer_class.from_pretrained.return_value = mock_tokenizer
         mock_model_class.from_pretrained.return_value = mock_model
 
         embedder = HuggingFaceEmbedder()
-        assert embedder.get_dimensions() == 3584
+
+        mock_inputs = {
+            "input_ids": torch.tensor([[1, 2, 3]]),
+            "attention_mask": torch.tensor([[1, 1, 1]]),
+        }
+        mock_tokenizer.return_value = mock_inputs
+
+        mock_outputs = MagicMock()
+        mock_outputs.last_hidden_state = torch.randn(1, 3, 1536)
+        mock_model.return_value = mock_outputs
+
+        test_query = "find a function that sorts arrays"
+        embedder.embed_query(test_query)
+
+        call_args = mock_tokenizer.call_args
+        expected_prefix = JINA_TASK_PREFIXES["nl2code"]["query"]
+        passed_text = call_args[0][0] if call_args[0] else call_args[1].get("text", "")
+        assert passed_text.startswith(expected_prefix)
+
+
+class TestHuggingFaceEmbedderDimensions:
+    @patch("src.embedder.AutoTokenizer")
+    @patch("src.embedder.AutoModel")
+    def test_get_dimensions_returns_1536(self, mock_model_class, mock_tokenizer_class):
+        mock_tokenizer = MagicMock()
+        mock_model = MagicMock()
+        mock_tokenizer_class.from_pretrained.return_value = mock_tokenizer
+        mock_model_class.from_pretrained.return_value = mock_model
+
+        embedder = HuggingFaceEmbedder()
+        assert embedder.get_dimensions() == 1536
 
 
 class TestHuggingFaceEmbedderHealthCheck:
