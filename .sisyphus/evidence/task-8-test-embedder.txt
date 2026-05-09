@@ -1,0 +1,55 @@
+Task: Update test_embedder.py with new model name, dimensions (3584→1536), and add prefix verification tests
+Date: Sat May 09 2026
+Status: COMPLETED
+
+VERIFICATION RESULTS:
+===================
+
+1. Model name change (line 22):
+   ✅ Changed from "nomic-ai/nomic-embed-code" to "jinaai/jina-code-embeddings-1.5b"
+   Found at: tests/test_embedder.py:22
+
+2. Dimension updates (3584 → 1536):
+   ✅ Line 68: torch.randn(batch_size, 10, 1536)
+   ✅ Line 78: assert len(result[0]["embedding"]) == 1536
+   ✅ Line 79: assert len(result[1]["embedding"]) == 1536
+   ✅ Line 100: mock_outputs.last_hidden_state = torch.randn(1, 3, 1536)
+   ✅ Line 143: mock_outputs.last_hidden_state = torch.randn(1, 3, 1536)
+   ✅ Line 170: mock_outputs.last_hidden_state = torch.randn(1, 3, 1536)
+   ✅ Line 176: assert len(result) == 1536
+   ✅ Line 195: mock_outputs.last_hidden_state = torch.randn(1, 3, 1536)
+   ✅ Line 217: assert embedder.get_dimensions() == 1536
+   Total: 10 references to 1536
+
+3. Prefix verification tests:
+   ✅ test_embed_chunks_prepends_passage_prefix (lines 83-108)
+      - Verifies JINA_TASK_PREFIXES["code2code"]["passage"] prefix is prepended
+   ✅ test_embed_query_prepends_query_prefix (lines 180-204)
+      - Verifies JINA_TASK_PREFIXES["nl2code"]["query"] prefix is prepended
+
+4. Test execution:
+   ✅ All 13 tests passed
+   Command: python3 -m pytest tests/test_embedder.py -v
+   
+   Test results:
+   - test_init_with_defaults PASSED
+   - test_init_with_custom_params PASSED
+   - test_embed_chunks_returns_embeddings PASSED
+   - test_embed_chunks_prepends_passage_prefix PASSED
+   - test_embed_chunks_empty_list PASSED
+   - test_embed_chunks_preserves_original_chunks PASSED
+   - test_embed_query_returns_vector PASSED
+   - test_embed_query_prepends_query_prefix PASSED
+   - test_get_dimensions_returns_1536 PASSED
+   - test_health_check_success PASSED
+   - test_health_check_failure PASSED
+   - test_factory_returns_huggingface_embedder PASSED
+   - test_factory_passes_kwargs PASSED
+
+SUMMARY:
+========
+All required changes have been verified:
+- Model name updated to jinaai/jina-code-embeddings-1.5b
+- All 3584 dimension references updated to 1536
+- Prefix verification tests added and passing
+- No remaining 3584 references in the test file

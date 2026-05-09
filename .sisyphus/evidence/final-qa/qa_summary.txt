@@ -1,0 +1,72 @@
+======================================================================
+FINAL QA TEST RESULTS
+======================================================================
+Timestamp: 2026-05-09T23:09:26.182770
+
+
+Scenario 1: Config Values
+----------------------------------------------------------------------
+  [PASS] DEFAULT_MODEL
+         Details: Value: jinaai/jina-code-embeddings-1.5b
+  [PASS] EMBEDDING_DIMENSIONS
+         Details: Value: 1536
+  [PASS] TOKENIZER_NAME
+         Details: Value: jinaai/jina-code-embeddings-1.5b
+  [PASS] EMBEDDING_PROVIDERS
+         Details: Structure correct
+  [PASS] DEFAULT_PROVIDER
+         Details: Value: huggingface
+
+Scenario 2: Embedder Prefixes
+----------------------------------------------------------------------
+  [PASS] JINA_TASK_PREFIXES structure
+         Details: Has code2code and nl2code keys
+  [PASS] code2code.passage
+         Details: Value: Candidate code snippet:
+
+  [PASS] nl2code.query
+         Details: Value: Find the most relevant code snippet given the following query:
+
+  [PASS] code2code.query
+         Details: Value: Find an equivalent code snippet given the following code snippet:
+
+  [PASS] nl2code.passage
+         Details: Value: Candidate code snippet:
+
+
+Scenario 3: Chunker Tokenizer
+----------------------------------------------------------------------
+  [PASS] chunker import
+         Details: load_tokenizer and chunk_text available
+  [PASS] TOKENIZER_NAME import
+         Details: Imported from src.config
+  [PASS] docstring reference
+         Details: jina model mentioned
+  [PASS] TOKENIZER_NAME usage
+         Details: Used in chunker
+
+Scenario 4: Edge Cases
+----------------------------------------------------------------------
+  [PASS] Empty chunks handling
+         Details: Has guard clause
+  [PASS] embed_chunks signature
+         Details: (self, chunks: list[dict], batch_size: int = 64) -> list[dict]
+  [PASS] code2code.passage usage
+         Details: Prefix applied in embed_chunks
+  [PASS] nl2code.query usage
+         Details: Prefix applied in embed_query
+
+Scenario 5: Integration
+----------------------------------------------------------------------
+  [PASS] Embedder import
+         Details: HuggingFaceEmbedder and JINA_TASK_PREFIXES available
+  [PASS] Config import
+         Details: All constants available
+  [PASS] Chunker import
+         Details: chunk_text and load_tokenizer available
+  [PASS] Cross-module consistency
+         Details: Checks: 2/2
+
+======================================================================
+OVERALL: 22/22 tests passed
+======================================================================

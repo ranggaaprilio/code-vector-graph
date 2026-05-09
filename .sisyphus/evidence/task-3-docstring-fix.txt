@@ -1,0 +1,2 @@
+"""Download jinaai/jina-code-embeddings-1.5b model from Hugging Face."""
+model_name = "jinaai/jina-code-embeddings-1.5b"
