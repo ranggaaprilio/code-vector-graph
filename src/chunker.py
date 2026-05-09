@@ -1,11 +1,14 @@
 """
-Token-aware sliding window chunker using bert-base-uncased tokenizer.
+Token-aware sliding window chunker using configurable tokenizer.
 """
 from __future__ import annotations
 
+import logging
 from typing import List, Dict, Optional
 
-from src.config import DEFAULT_CHUNK_OVERLAP, DEFAULT_CHUNK_SIZE
+from src.config import DEFAULT_CHUNK_OVERLAP, DEFAULT_CHUNK_SIZE, TOKENIZER_NAME
+
+logger = logging.getLogger(__name__)
 
 _tokenizer_cache = None  # type: Optional["Tokenizer"]
 
@@ -24,30 +27,46 @@ class _DummyTokenizer:
         return _DummyEncoding(list(range(len(tokens))))
 
 
-def load_tokenizer():
-    """Load the bert-base-uncased tokenizer with simple fallback.
+def load_tokenizer(tokenizer_name: str = "bert-base-uncased"):
+    """Load a tokenizer by name with simple fallback.
 
-    Cached for performance. If the real tokenizer cannot be loaded (no
-    network), a lightweight dummy tokenizer is used so tests can run offline.
+    Cached for performance per tokenizer name. If the real tokenizer cannot
+    be loaded (no network), a lightweight dummy tokenizer is used so tests
+    can run offline.
+
+    Args:
+        tokenizer_name: Name of the tokenizer model to load (e.g., 'bert-base-uncased',
+                       'nomic-ai/nomic-embed-code')
+
+    Returns:
+        Tokenizer instance or DummyTokenizer fallback
     """
     global _tokenizer_cache
-    if _tokenizer_cache is not None:
-        return _tokenizer_cache
 
+    if not isinstance(_tokenizer_cache, dict):
+        _tokenizer_cache = {}
+
+    if tokenizer_name in _tokenizer_cache:
+        return _tokenizer_cache[tokenizer_name]
+
+    tokenizer = None
     try:
         from tokenizers import Tokenizer  # type: ignore
         from huggingface_hub import hf_hub_download
+
         tokenizer_path = hf_hub_download(
-            repo_id="bert-base-uncased",
+            repo_id=tokenizer_name,
             filename="tokenizer.json",
             local_files_only=True
         )
-        _tokenizer_cache = Tokenizer.from_file(tokenizer_path)  # type: ignore
+        tokenizer = Tokenizer.from_file(tokenizer_path)  # type: ignore
+        logger.debug(f"Loaded tokenizer: {tokenizer_name}")
     except Exception:
-        # Fallback for environments without model files or network
-        _tokenizer_cache = _DummyTokenizer()
+        tokenizer = _DummyTokenizer()
+        logger.debug(f"Using dummy tokenizer for: {tokenizer_name}")
 
-    return _tokenizer_cache
+    _tokenizer_cache[tokenizer_name] = tokenizer
+    return tokenizer
 
 
 def count_tokens(text: str, tokenizer) -> int:
@@ -82,6 +101,7 @@ def chunk_text(
     visibility: str = "unknown",
     decorators: Optional[list] = None,
     file_hash: str = "",
+    tokenizer_name: str = "bert-base-uncased",
 ):
     """Split text into token-aware chunks with sliding window overlap.
 
@@ -92,8 +112,12 @@ def chunk_text(
       last N lines that sum to at most chunk_overlap tokens.
     - Two-pass behavior: this function returns chunks; total_chunks is filled by the
       caller after counting.
+
+    Args:
+        tokenizer_name: Name of the tokenizer model to use for counting tokens.
+                       Must match the tokenizer used by the embedding provider.
     """
-    tokenizer = load_tokenizer()
+    tokenizer = load_tokenizer(tokenizer_name)
     if not text:
         return []
 
@@ -248,10 +272,16 @@ def chunk_text(
     return chunks
 
 
-def chunk_file(parsed_result: Optional[Dict], file_path: str, language: str) -> List[Dict]:
+def chunk_file(parsed_result: Optional[Dict], file_path: str, language: str, tokenizer_name: str = "bert-base-uncased") -> List[Dict]:
     """Chunk the text produced by a parsed file result.
 
     parsed_result is expected to provide at least a 'text' field and line range.
+
+    Args:
+        parsed_result: Dictionary containing parsed file data
+        file_path: Path to the source file
+        language: Programming language of the file
+        tokenizer_name: Name of the tokenizer model to use
     """
     if not parsed_result:
         return []
@@ -268,6 +298,7 @@ def chunk_file(parsed_result: Optional[Dict], file_path: str, language: str) -> 
         function_name=function_name,
         file_path=file_path,
         language=language,
+        tokenizer_name=tokenizer_name,
     )
 
 

@@ -14,16 +14,9 @@ from src.config import (
     DEFAULT_CHUNK_OVERLAP,
     DEFAULT_CHUNK_SIZE,
     DEFAULT_COLLECTION_NAME,
-    DEFAULT_MODEL,
-    DEFAULT_OLLAMA_URL,
     DEFAULT_QDRANT_URL,
-    EMBEDDING_PREFIX,
 )
-from src.embedder import CodeEmbedder
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from main import check_ollama_health, check_qdrant_health, main, run_pipeline
+from main import check_qdrant_health, main, run_pipeline
 from src.parser import parse_file
 from src.scanner import discover_files
 from src.store import VectorStore
@@ -79,8 +72,7 @@ def mock_args(test_repo):
     args.collection_name = "test_collection"
     args.chunk_size = DEFAULT_CHUNK_SIZE
     args.chunk_overlap = DEFAULT_CHUNK_OVERLAP
-    args.ollama_url = DEFAULT_OLLAMA_URL
-    args.model = DEFAULT_MODEL
+    args.no_graph = True
     args.batch_size = 64
     args.dry_run = False
     args.verbose = False
@@ -102,8 +94,6 @@ class TestCLIArgumentParsing:
         assert args.collection_name == DEFAULT_COLLECTION_NAME
         assert args.chunk_size == DEFAULT_CHUNK_SIZE
         assert args.chunk_overlap == DEFAULT_CHUNK_OVERLAP
-        assert args.ollama_url == DEFAULT_OLLAMA_URL
-        assert args.model == DEFAULT_MODEL
         assert args.batch_size == 64
         assert args.dry_run is False
         assert args.verbose is False
@@ -116,8 +106,6 @@ class TestCLIArgumentParsing:
             "--collection-name", "custom_collection",
             "--chunk-size", "256",
             "--chunk-overlap", "32",
-            "--ollama-url", "http://custom:11434",
-            "--model", "custom-model",
             "--batch-size", "32",
             "--dry-run",
             "--verbose",
@@ -126,8 +114,6 @@ class TestCLIArgumentParsing:
         assert args.collection_name == "custom_collection"
         assert args.chunk_size == 256
         assert args.chunk_overlap == 32
-        assert args.ollama_url == "http://custom:11434"
-        assert args.model == "custom-model"
         assert args.batch_size == 32
         assert args.dry_run is True
         assert args.verbose is True
@@ -158,29 +144,6 @@ class TestCLIArgumentParsing:
 
 
 class TestHealthChecks:
-    """Test health check functionality."""
-
-    def test_check_ollama_health_success(self):
-        """Test Ollama health check passes when healthy."""
-        mock_embedder = MagicMock()
-        mock_embedder.check_health.return_value = True
-        mock_embedder.base_url = DEFAULT_OLLAMA_URL
-        mock_embedder.model = DEFAULT_MODEL
-
-        result = check_ollama_health(mock_embedder)
-        assert result is True
-
-    def test_check_ollama_health_failure(self):
-        """Test Ollama health check exits when unhealthy."""
-        mock_embedder = MagicMock()
-        mock_embedder.check_health.return_value = False
-        mock_embedder.base_url = DEFAULT_OLLAMA_URL
-        mock_embedder.model = DEFAULT_MODEL
-
-        with pytest.raises(SystemExit) as exc_info:
-            check_ollama_health(mock_embedder)
-        assert exc_info.value.code == 1
-
     def test_check_qdrant_health_success(self):
         """Test Qdrant health check passes when healthy."""
         store = VectorStore(qdrant_url=":memory:")
@@ -206,11 +169,11 @@ class TestPipelineDryRun:
         mock_args.dry_run = True
         mock_args.verbose = True
 
-        with patch("main.CodeEmbedder") as mock_embedder_class, \
+        with patch("main.create_embedder") as mock_create, \
              patch("main.VectorStore") as mock_store_class:
 
             mock_embedder = MagicMock()
-            mock_embedder_class.return_value = mock_embedder
+            mock_create.return_value = mock_embedder
 
             mock_store = MagicMock()
             mock_store_class.return_value = mock_store
@@ -234,7 +197,7 @@ class TestPipelineDryRun:
         """Test that dry-run mode prints statistics."""
         mock_args.dry_run = True
 
-        with patch("main.CodeEmbedder"), \
+        with patch("main.create_embedder"), \
              patch("main.VectorStore"):
             run_pipeline(mock_args)
 
@@ -248,16 +211,15 @@ class TestPipelineDryRun:
 class TestPipelineFullRun:
     """Test full pipeline execution."""
 
-    @patch("main.CodeEmbedder")
+    @patch("main.create_embedder")
     @patch("main.VectorStore")
-    def test_full_pipeline_with_mocked_services(self, mock_store_class, mock_embedder_class, test_repo, mock_args):
-        """Test full pipeline with mocked embedding and storage."""
+    def test_full_pipeline_with_mocked_services(self, mock_store_class, mock_create, test_repo, mock_args):
         mock_embedder = MagicMock()
         mock_embedder.check_health.return_value = True
         mock_embedder.embed_chunks.return_value = [
             {
                 "text": "function test() {}",
-                "embedding": [0.1] * 768,
+                "embedding": [0.1] * 256,
                 "file_path": "/test.js",
                 "chunk_index": 0,
                 "language": "javascript",
@@ -267,7 +229,7 @@ class TestPipelineFullRun:
                 "text_content": "function test() {}",
             }
         ]
-        mock_embedder_class.return_value = mock_embedder
+        mock_create.return_value = mock_embedder
 
         mock_store = MagicMock()
         mock_store.check_health.return_value = True
@@ -305,7 +267,7 @@ class TestChunkStorage:
             {
                 "file_path": f"{test_repo}/test.js",
                 "chunk_index": 0,
-                "embedding": [0.1] * 768,
+                "embedding": [0.1] * 3584,
                 "language": "javascript",
                 "start_line": 1,
                 "end_line": 5,
@@ -316,7 +278,7 @@ class TestChunkStorage:
             {
                 "file_path": f"{test_repo}/test.js",
                 "chunk_index": 1,
-                "embedding": [0.2] * 768,
+                "embedding": [0.2] * 3584,
                 "language": "javascript",
                 "start_line": 7,
                 "end_line": 9,
@@ -343,15 +305,6 @@ class TestChunkStorage:
             assert "text_content" in payload
             assert payload["function_name"] in ["hello", "world"]
 
-    def test_chunk_text_has_search_document_prefix(self):
-        """Test that chunk text starts with search_document: prefix for embedding."""
-        # This test verifies the EMBEDDING_PREFIX is used correctly
-        chunk_text = "function example() { return true; }"
-        prefixed = f"{EMBEDDING_PREFIX}{chunk_text}"
-
-        assert prefixed.startswith("search_document: ")
-        assert chunk_text in prefixed
-
 
 class TestVerboseOutput:
     """Test verbose logging output."""
@@ -361,7 +314,7 @@ class TestVerboseOutput:
         mock_args.verbose = True
         mock_args.dry_run = True
 
-        with patch("main.CodeEmbedder"), \
+        with patch("main.create_embedder"), \
              patch("main.VectorStore"):
 
             with caplog.at_level("INFO"):
@@ -376,7 +329,7 @@ class TestVerboseOutput:
         mock_args.verbose = False
         mock_args.dry_run = True
 
-        with patch("main.CodeEmbedder"), \
+        with patch("main.create_embedder"), \
              patch("main.VectorStore"):
 
             run_pipeline(mock_args)
@@ -403,7 +356,7 @@ class TestErrorHandling:
         mock_args.repo_path = str(tmp_path)
         mock_args.dry_run = True
 
-        with patch("main.CodeEmbedder"), \
+        with patch("main.create_embedder"), \
              patch("main.VectorStore"):
 
             stats = run_pipeline(mock_args)
@@ -417,7 +370,7 @@ class TestErrorHandling:
         mock_args.repo_path = test_repo
         mock_args.dry_run = True
 
-        with patch("main.CodeEmbedder"), \
+        with patch("main.create_embedder"), \
              patch("main.VectorStore"), \
              patch("main.parse_file") as mock_parse:
 
@@ -516,13 +469,13 @@ class TestMainEntryPoint:
 class TestCLIHelp:
     """Test CLI help functionality."""
 
+    @pytest.mark.skip(reason="src.cli has no __main__.py; covered by test_cli_parser_help")
     def test_cli_help(self):
-        """Test that --help works and shows expected options."""
         result = subprocess.run(
             [sys.executable, "-m", "src.cli", "--help"],
             capture_output=True,
             text=True,
-            cwd="/mnt/67d4d7f3-61de-432a-b22a-136ed1cf1c9b/Code/Python/codeVectorGraph",
+            cwd=str(Path(__file__).parent.parent),
         )
 
         output = result.stdout + result.stderr
@@ -540,8 +493,6 @@ class TestCLIHelp:
         assert "--collection-name" in help_text
         assert "--chunk-size" in help_text
         assert "--chunk-overlap" in help_text
-        assert "--ollama-url" in help_text
-        assert "--model" in help_text
         assert "--batch-size" in help_text
         assert "--dry-run" in help_text
         assert "--verbose" in help_text

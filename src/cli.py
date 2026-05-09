@@ -9,28 +9,27 @@ from src.config import (
     DEFAULT_CHUNK_OVERLAP,
     DEFAULT_CHUNK_SIZE,
     DEFAULT_COLLECTION_NAME,
-    DEFAULT_PROVIDER,
     DEFAULT_MODEL,
-    DEFAULT_OLLAMA_URL,
     DEFAULT_QDRANT_URL,
     EMBEDDING_PROVIDERS,
+    NEO4J_URI,
+    NEO4J_USER,
+    NEO4J_PASSWORD,
 )
 
 logger = logging.getLogger(__name__)
 
 
 def create_parser() -> argparse.ArgumentParser:
-    """Create and configure the argument parser."""
     parser = argparse.ArgumentParser(
         prog="code-vector-graph",
-        description="Embed JS/TS code into Qdrant using Tree-sitter, Ollama, and tokenizers.",
+        description="Embed JS/TS code into Qdrant using Tree-sitter and HuggingFace transformers.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   %(prog)s --repo-path ./my-project
-  %(prog)s --repo-path ./my-project --embedding-provider huggingface
   %(prog)s --repo-path ./my-project --dry-run --verbose
-  %(prog)s --repo-path ./my-project --qdrant-url http://localhost:6333 --model nomic-embed-text:latest
+  %(prog)s --repo-path ./my-project --qdrant-url http://localhost:6333
         """.strip(),
     )
 
@@ -70,32 +69,37 @@ Examples:
     )
 
     parser.add_argument(
-        "--ollama-url",
-        type=str,
-        default=DEFAULT_OLLAMA_URL,
-        help=f"Ollama server URL (default: {DEFAULT_OLLAMA_URL})",
-    )
-
-    parser.add_argument(
-        "--model",
-        type=str,
-        default=DEFAULT_MODEL,
-        help=f"Ollama embedding model (default: {DEFAULT_MODEL})",
-    )
-
-    parser.add_argument(
-        "--embedding-provider",
-        type=str,
-        default=DEFAULT_PROVIDER,
-        choices=list(EMBEDDING_PROVIDERS.keys()),
-        help=f"Embedding provider to use (default: {DEFAULT_PROVIDER})",
-    )
-
-    parser.add_argument(
         "--batch-size",
         type=int,
         default=64,
         help="Embedding batch size (default: 64)",
+    )
+
+    parser.add_argument(
+        "--no-graph",
+        action="store_true",
+        help="Skip Neo4j graph ingestion",
+    )
+
+    parser.add_argument(
+        "--neo4j-uri",
+        type=str,
+        default=NEO4J_URI,
+        help=f"Neo4j bolt URI (default: {NEO4J_URI})",
+    )
+
+    parser.add_argument(
+        "--neo4j-user",
+        type=str,
+        default=NEO4J_USER,
+        help=f"Neo4j username (default: {NEO4J_USER})",
+    )
+
+    parser.add_argument(
+        "--neo4j-password",
+        type=str,
+        default=NEO4J_PASSWORD,
+        help=f"Neo4j password (default: {NEO4J_PASSWORD})",
     )
 
     parser.add_argument(
@@ -114,29 +118,15 @@ Examples:
 
 
 def parse_args(args: list[str] | None = None) -> argparse.Namespace:
-    """
-    Parse command line arguments.
-
-    Args:
-        args: Command line arguments (defaults to sys.argv[1:])
-
-    Returns:
-        Parsed arguments namespace
-
-    Raises:
-        SystemExit: If validation fails or --help is used
-    """
     parser = create_parser()
     parsed = parser.parse_args(args)
 
-    # Validate repo-path exists
     repo_path = Path(parsed.repo_path)
     if not repo_path.exists():
         parser.error(f"Repository path does not exist: {parsed.repo_path}")
     if not repo_path.is_dir():
         parser.error(f"Repository path is not a directory: {parsed.repo_path}")
 
-    # Validate chunk-size and chunk-overlap are positive
     if parsed.chunk_size <= 0:
         parser.error(f"Chunk size must be positive, got: {parsed.chunk_size}")
     if parsed.chunk_overlap < 0:
@@ -146,7 +136,6 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
             f"Chunk overlap ({parsed.chunk_overlap}) must be less than chunk size ({parsed.chunk_size})"
         )
 
-    # Validate batch-size is positive
     if parsed.batch_size <= 0:
         parser.error(f"Batch size must be positive, got: {parsed.batch_size}")
 
@@ -154,12 +143,6 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
 
 
 def setup_logging(verbose: bool) -> None:
-    """
-    Configure logging based on verbosity.
-
-    Args:
-        verbose: If True, set INFO level, otherwise WARNING
-    """
     level = logging.INFO if verbose else logging.WARNING
     logging.basicConfig(
         level=level,
@@ -167,7 +150,6 @@ def setup_logging(verbose: bool) -> None:
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
-    # Suppress noisy third-party loggers unless verbose
     if not verbose:
         logging.getLogger("urllib3").setLevel(logging.WARNING)
         logging.getLogger("requests").setLevel(logging.WARNING)

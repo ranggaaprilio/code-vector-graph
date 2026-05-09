@@ -5,14 +5,24 @@ import logging
 import sys
 from pathlib import Path
 
+import torch
+
 from dotenv import load_dotenv
 
 load_dotenv()
 
 from src.chunker import chunk_text
 from src.cli import parse_args, setup_logging
-from src.config import EMBEDDING_PREFIX, EMBEDDING_PROVIDERS
+from src.config import (
+    EMBEDDING_PROVIDERS,
+    TOKENIZER_NAME,
+    NEO4J_URI,
+    NEO4J_USER,
+    NEO4J_PASSWORD,
+)
 from src.embedder import create_embedder
+from src.graph_extractor import extract_graph_entities
+from src.graph_store import GraphStore
 from src.parser import parse_file, extract_ast_metadata
 from src.scanner import discover_files
 from src.store import VectorStore, get_collection_name
@@ -23,35 +33,17 @@ logger = logging.getLogger(__name__)
 FILE_BATCH_SIZE = 50
 
 
-def check_ollama_health(embedder) -> bool:
-    """
-    Check Ollama health and fail fast with clear error if unreachable.
-
-    Args:
-        embedder: Configured embedder instance
-
-    Returns:
-        True if healthy
-
-    Raises:
-        SystemExit: If Ollama is unreachable or model is unavailable
-    """
-    logger.info("Checking Ollama health...")
-
+def check_embedder_health(embedder) -> bool:
+    """Check embedder health and fail fast with clear error if unreachable."""
+    logger.info("Checking embedder health...")
     if not embedder.check_health():
-        logger.error("Ollama health check failed")
+        logger.error("Embedder health check failed")
         print(
-            "ERROR: Cannot connect to Ollama or model is not available.",
+            "ERROR: Embedder is not available.",
             file=sys.stderr,
         )
-        print(f"  URL: {embedder.base_url}", file=sys.stderr)
-        print(f"  Model: {embedder.model}", file=sys.stderr)
-        print("\nPlease ensure:", file=sys.stderr)
-        print("  1. Ollama is running (ollama serve)", file=sys.stderr)
-        print(f"  2. Model '{embedder.model}' is pulled (ollama pull {embedder.model})", file=sys.stderr)
-        sys.exit(1)
-
-    logger.info("Ollama health check passed")
+        return False
+    logger.info("Embedder health check passed")
     return True
 
 
@@ -99,9 +91,12 @@ def run_pipeline(args) -> dict:
         "files_found": 0,
         "files_parsed": 0,
         "files_failed": 0,
+        "files_graphed": 0,
         "total_chunks": 0,
         "chunks_embedded": 0,
         "chunks_stored": 0,
+        "nodes_created": 0,
+        "relationships_created": 0,
     }
 
     logger.info(f"Starting pipeline for repository: {args.repo_path}")
@@ -116,33 +111,44 @@ def run_pipeline(args) -> dict:
         logger.warning("No files found to process")
         return stats
 
-    # Get dimensions for the selected provider
-    dimensions = EMBEDDING_PROVIDERS[args.embedding_provider]["dimensions"]
-
-    # Generate dynamic collection name
-    collection_name = get_collection_name(args.collection_name, args.embedding_provider, args.model)
+    dimensions = EMBEDDING_PROVIDERS["huggingface"]["dimensions"]
+    collection_name = get_collection_name(args.collection_name, "huggingface")
 
     # Step 2: Initialize components (skip in dry-run mode to save memory)
     embedder = None
     store = None
+    graph_store = None
 
     if not args.dry_run:
-        embedder_kwargs = {}
-        if args.embedding_provider == "ollama":
-            embedder_kwargs["model"] = args.model
-            embedder_kwargs["base_url"] = args.ollama_url
-        embedder = create_embedder(args.embedding_provider, **embedder_kwargs)
+        embedder = create_embedder()
         store = VectorStore(
             collection_name=collection_name,
             qdrant_url=args.qdrant_url,
             embedding_dimensions=dimensions,
         )
 
-        # Health checks for external services
-        if args.embedding_provider == "ollama":
-            check_ollama_health(embedder)
+        if not embedder.check_health():
+            logger.error("Embedder health check failed")
+            print("ERROR: HuggingFace embedder is not available.", file=sys.stderr)
+            sys.exit(1)
         check_qdrant_health(store)
         store.create_collection()
+
+        if not args.no_graph:
+            graph_store = GraphStore(
+                uri=args.neo4j_uri or NEO4J_URI,
+                user=args.neo4j_user or NEO4J_USER,
+                password=args.neo4j_password or NEO4J_PASSWORD,
+            )
+            if not graph_store.check_health():
+                logger.warning("Neo4j unavailable, continuing without graph")
+                graph_store.close()
+                graph_store = None
+            else:
+                logger.info("Neo4j health check passed")
+                graph_store.create_constraints()
+        else:
+            logger.info("Graph ingestion disabled via --no-graph")
     else:
         logger.info("Dry-run mode: skipping component initialization and health checks")
 
@@ -183,6 +189,8 @@ def run_pipeline(args) -> dict:
             parsed.pop("source_bytes", None)
             parsed.pop("tree", None)
 
+            tokenizer_name = TOKENIZER_NAME
+
             # Chunk the parsed text, wiring in AST metadata to chunks
             chunks = chunk_text(
                 text=parsed["stripped_text"],
@@ -203,6 +211,7 @@ def run_pipeline(args) -> dict:
                 visibility=ast_metadata.get("visibility"),
                 decorators=ast_metadata.get("decorators"),
                 file_hash=file_hash,
+                tokenizer_name=tokenizer_name,
             )
 
             # Flatten metadata and add text_content field for storage
@@ -226,22 +235,100 @@ def run_pipeline(args) -> dict:
             batch_chunks.clear()
             continue
 
-        # Step 5: Embed and store this batch immediately
+        # Pre-extract graph data before embedding to avoid holding
+        # embedding tensors in memory while re-parsing files
+        batch_graph_data = []
+        if graph_store and batch_chunks:
+            logger.info(f"Pre-extracting graph entities for {len(file_batch)} files...")
+            for file_info in file_batch:
+                file_path = file_info["path"]
+                grammar = file_info["grammar"]
+                language = file_info["language"]
+                file_hash = file_info.get("file_hash", "")
+
+                parsed = parse_file(file_path, grammar)
+                if parsed is None:
+                    logger.warning(f"Failed to re-parse file for graph: {file_path}")
+                    continue
+
+                graph_data = extract_graph_entities(
+                    parsed["tree"],
+                    parsed["source_bytes"],
+                    file_path,
+                    language,
+                    file_hash
+                )
+
+                chunk_nodes = []
+                for chunk in batch_chunks:
+                    if chunk.get("file_path") == file_path:
+                        chunk_node = {
+                            "label": "Chunk",
+                            "id": chunk.get("id", ""),
+                            "properties": {
+                                "qdrant_id": chunk.get("id", ""),
+                                "file_path": chunk.get("file_path", ""),
+                                "start_line": chunk.get("start_line", 0),
+                                "end_line": chunk.get("end_line", 0),
+                            }
+                        }
+                        chunk_nodes.append(chunk_node)
+
+                if chunk_nodes:
+                    graph_data["nodes"].extend(chunk_nodes)
+
+                batch_graph_data.append(graph_data)
+                stats["files_graphed"] += 1
+
+                parsed.clear()
+                del parsed
+                del graph_data
+                del chunk_nodes
+
+            logger.info(f"Graph extraction complete for {len(batch_graph_data)} files")
+
+        # Stream embeddings to Qdrant in sub-batches to cap memory usage
         if batch_chunks:
-            logger.info(f"Embedding {len(batch_chunks)} chunks from batch (batch size: {args.batch_size})...")
-            embedded_chunks = embedder.embed_chunks(batch_chunks, batch_size=args.batch_size)
-            stats["chunks_embedded"] += len(embedded_chunks)
-            logger.info(f"Successfully embedded {len(embedded_chunks)} chunks from this batch")
+            total_sub_batches = (len(batch_chunks) + args.batch_size - 1) // args.batch_size
+            logger.info(f"Streaming {len(batch_chunks)} chunks through {total_sub_batches} embedding sub-batches...")
+            for sub_idx in range(total_sub_batches):
+                sub_start = sub_idx * args.batch_size
+                sub_end = min(sub_start + args.batch_size, len(batch_chunks))
+                sub_batch = batch_chunks[sub_start:sub_end]
 
-            # Step 6: Store chunks in Qdrant
-            if embedded_chunks:
-                logger.info(f"Storing {len(embedded_chunks)} chunks in Qdrant...")
-                point_ids = store.upsert_chunks(embedded_chunks)
-                stats["chunks_stored"] += len(point_ids)
-                logger.info(f"Successfully stored {len(point_ids)} chunks")
+                logger.info(f"Embedding sub-batch {sub_idx + 1}/{total_sub_batches} ({len(sub_batch)} chunks)...")
+                embedded_sub = embedder.embed_chunks(sub_batch, batch_size=args.batch_size)
+                stats["chunks_embedded"] += len(embedded_sub)
 
-        # Clear batch chunks and trigger garbage collection
+                if embedded_sub:
+                    logger.info(f"Storing sub-batch {sub_idx + 1}/{total_sub_batches} in Qdrant...")
+                    point_ids = store.upsert_chunks(embedded_sub)
+                    stats["chunks_stored"] += len(point_ids)
+                    logger.info(f"Successfully stored {len(point_ids)} chunks")
+
+                del embedded_sub
+                del sub_batch
+                gc.collect()
+                if torch.backends.mps.is_available():
+                    torch.mps.empty_cache()
+                logger.info(f"Freed memory after sub-batch {sub_idx + 1}/{total_sub_batches}")
+
+        if graph_store and batch_graph_data:
+            logger.info(f"Upserting graph data for {len(batch_graph_data)} files to Neo4j...")
+            for graph_data in batch_graph_data:
+                graph_store.upsert_nodes(graph_data["nodes"])
+                graph_store.upsert_relationships(graph_data["relationships"])
+                stats["nodes_created"] += len(graph_data["nodes"])
+                stats["relationships_created"] += len(graph_data["relationships"])
+
+            for gd in batch_graph_data:
+                del gd
+            del batch_graph_data
+            gc.collect()
+            logger.info("Graph ingestion complete for this batch")
+
         batch_chunks.clear()
+        del batch_chunks
         gc.collect()
 
     stats["total_chunks"] = total_chunks_created
@@ -262,18 +349,24 @@ def run_pipeline(args) -> dict:
         print(f"Total chunks:   {stats['total_chunks']}")
         print(f"Avg chunk size: {avg_chunk_size} chars")
         print("=" * 50)
-        print("No embeddings were generated or stored.")
+        print("No embeddings or graphs were generated or stored.")
         print("Run without --dry-run to perform full embedding.")
         print("=" * 50)
 
         return stats
 
-    # Final summary
+    if graph_store:
+        graph_store.close()
+
     logger.info("Pipeline completed successfully")
     print(f"\nPipeline Summary:")
     print(f"  Files processed: {stats['files_parsed']}/{stats['files_found']}")
     print(f"  Chunks embedded: {stats['chunks_embedded']}")
     print(f"  Chunks stored:   {stats['chunks_stored']}")
+    if stats['files_graphed'] > 0:
+        print(f"  Files graphed:   {stats['files_graphed']}")
+        print(f"  Nodes created:   {stats['nodes_created']}")
+        print(f"  Relationships:   {stats['relationships_created']}")
 
     return stats
 

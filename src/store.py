@@ -5,7 +5,7 @@ import uuid
 from typing import Any
 
 from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, PayloadSchemaType, PointStruct, VectorParams
+from qdrant_client.models import Distance, Filter, PayloadSchemaType, PointStruct, VectorParams
 
 from src.config import (
     DEFAULT_COLLECTION_NAME,
@@ -23,8 +23,8 @@ def get_collection_name(base_name: str, provider: str, model: str | None = None)
     Format: {base_name}_{model_suffix}_{dimensions}
 
     Examples:
-        - ollama + nomic-embed-text → code_chunks_nomic-embed-text_768
-        - huggingface + codet5p → code_chunks_codet5p-110m-embedding_256
+        - huggingface + nomic-embed-code → code_chunks_nomic-embed-code_3584
+        - huggingface + nomic-embed-code → code_chunks_nomic-embed-code_3584
     """
     provider_config = EMBEDDING_PROVIDERS[provider]
     model_name = model or provider_config["model"]
@@ -64,7 +64,9 @@ class VectorStore:
         else:
             self.client = QdrantClient(url=qdrant_url)
 
-        logger.debug(f"Initialized VectorStore for collection '{collection_name}' at {qdrant_url}")
+        logger.debug(
+            f"Initialized VectorStore for collection '{collection_name}' at {qdrant_url}"
+        )
 
     def check_health(self) -> bool:
         """
@@ -133,13 +135,17 @@ class VectorStore:
                     distance=Distance.COSINE,
                 ),
             )
-            logger.info(f"Created collection '{self.collection_name}' with {self.embedding_dimensions} dimensions (COSINE)")
+            logger.info(
+                f"Created collection '{self.collection_name}' with {self.embedding_dimensions} dimensions (COSINE)"
+            )
             self._ensure_indexes()
         except Exception as e:
             logger.error(f"Failed to create collection: {e}")
             raise
 
-    def _generate_deterministic_id(self, file_path: str, chunk_index: int, file_hash: str = "") -> str:
+    def _generate_deterministic_id(
+        self, file_path: str, chunk_index: int, file_hash: str = ""
+    ) -> str:
         """
         Generate deterministic UUID5 ID from file path, chunk index, and file hash.
 
@@ -223,7 +229,9 @@ class VectorStore:
             payload=payload,
         )
 
-    def upsert_chunks(self, chunks: list[dict[str, Any]], batch_size: int = 100) -> list[str]:
+    def upsert_chunks(
+        self, chunks: list[dict[str, Any]], batch_size: int = 100
+    ) -> list[str]:
         """
         Upsert chunks to Qdrant in batches with deterministic IDs.
 
@@ -248,7 +256,9 @@ class VectorStore:
             end_idx = min(start_idx + batch_size, len(points))
             batch = points[start_idx:end_idx]
 
-            logger.info(f"Upserting batch {batch_idx + 1}/{total_batches} ({len(batch)} points)")
+            logger.info(
+                f"Upserting batch {batch_idx + 1}/{total_batches} ({len(batch)} points)"
+            )
 
             self.client.upsert(
                 collection_name=self.collection_name,
@@ -257,6 +267,40 @@ class VectorStore:
 
         logger.info(f"Successfully upserted {len(points)} chunks")
         return point_ids
+
+    def search(self, vector: list[float], top_k: int = 20, query_filter: Filter | None = None) -> list[dict[str, Any]]:
+        """
+        Search for similar vectors in the collection.
+
+        Args:
+            vector: Query embedding vector
+            top_k: Number of results to return
+            query_filter: Optional Qdrant Filter for metadata filtering
+
+        Returns:
+            List of result dicts with 'id', 'payload', and 'score' keys
+        """
+        try:
+            kwargs: dict[str, Any] = {
+                "collection_name": self.collection_name,
+                "query": vector,
+                "limit": top_k,
+                "with_payload": True,
+            }
+            if query_filter is not None:
+                kwargs["query_filter"] = query_filter
+            search_result = self.client.query_points(**kwargs).points
+            return [
+                {
+                    "id": point.id,
+                    "payload": point.payload,
+                    "score": point.score,
+                }
+                for point in search_result
+            ]
+        except Exception as e:
+            logger.error(f"Search failed: {e}")
+            raise
 
     def get_point(self, point_id: str) -> dict[str, Any] | None:
         """

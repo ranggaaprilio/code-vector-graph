@@ -137,7 +137,7 @@ SUPPORTED_EXTENSIONS = {
 | Provider | Model | Dimensions | Prefix |
 |----------|-------|------------|--------|
 | Ollama | nomic-embed-text:latest | 768 | `search_document: ` |
-| HuggingFace | Salesforce/codet5p-110m-embedding | 256 | (none) |
+| HuggingFace | nomic-ai/nomic-embed-code | 3584 | (none) |
 
 ## COMMANDS
 

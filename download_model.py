@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-"""Download and patch Salesforce/codet5p-110m-embedding model for compatibility."""
+"""Download nomic-ai/nomic-embed-code model from Hugging Face."""
 
 import os
-from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -22,51 +21,28 @@ if not hf_token:
 os.environ['HF_TOKEN'] = hf_token
 
 import torch
-from transformers import AutoConfig, AutoModel, AutoTokenizer
+from transformers import AutoModel, AutoTokenizer
 
-model_name = "Salesforce/codet5p-110m-embedding"
-print(f"Downloading and patching {model_name}...")
+model_name = "nomic-ai/nomic-embed-code"
+print(f"Downloading {model_name}...")
 
-# Step 1: Download tokenizer (this works fine)
+# Step 1: Download tokenizer
 print("Downloading tokenizer...")
 tokenizer = AutoTokenizer.from_pretrained(
     model_name, trust_remote_code=True, token=os.environ['HF_TOKEN']
 )
 print("✓ Tokenizer downloaded")
 
-# Step 2: Load config and patch it
-print("Downloading config...")
-config = AutoConfig.from_pretrained(
-    model_name, trust_remote_code=True, token=os.environ['HF_TOKEN']
-)
-
-# Patch missing attributes for newer transformers versions
-if not hasattr(config, 'is_decoder'):
-    print("Patching config: adding is_decoder=False")
-    config.is_decoder = False
-    
-if not hasattr(config, 'is_encoder_decoder'):
-    print("Patching config: adding is_encoder_decoder=False")
-    config.is_encoder_decoder = False
-
-# Additional patches for T5 compatibility
-if hasattr(config, 'decoder'):
-    if not hasattr(config.decoder, 'is_decoder'):
-        config.decoder.is_decoder = False
-
-print("✓ Config patched")
-
-# Step 3: Load model with patched config
+# Step 2: Download model
 print("Downloading model (this may take a few minutes)...")
 try:
     model = AutoModel.from_pretrained(
         model_name,
-        config=config,
         trust_remote_code=True,
         token=os.environ['HF_TOKEN']
     )
     print("✓ Model downloaded successfully")
-    
+
     # Test the model
     print("\nTesting model...")
     test_input = tokenizer("def hello(): pass", return_tensors="pt")
@@ -81,7 +57,7 @@ try:
         print(f"✓ Model works! Output shape: {output.shape}")
     else:
         print(f"✓ Model works! Output type: {type(output)}")
-    
+
 except Exception as e:
     print(f"✗ Error loading model: {e}")
     raise

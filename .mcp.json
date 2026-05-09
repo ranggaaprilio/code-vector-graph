@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "code-vector-graph": {
+      "type": "stdio",
+      "command": "/Users/ranggaaprilioutama/Repository/poc/code-vector-graph/.venv/bin/python",
+      "args": [
+        "/Users/ranggaaprilioutama/Repository/poc/code-vector-graph/mcp_server.py"
+      ]
+    }
+  }
+}

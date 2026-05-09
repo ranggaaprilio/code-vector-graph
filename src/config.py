@@ -12,31 +12,26 @@ SUPPORTED_EXTENSIONS = {
 }
 
 COMMENT_NODE_TYPES = ("comment", "line_comment", "block_comment")
-DEFAULT_CHUNK_SIZE = 512
+DEFAULT_CHUNK_SIZE = 400
 DEFAULT_CHUNK_OVERLAP = 64
-DEFAULT_OLLAMA_URL = "http://localhost:11434"
 DEFAULT_QDRANT_URL = "http://localhost:6333"
 DEFAULT_COLLECTION_NAME = "code_chunks"
-DEFAULT_MODEL = "nomic-embed-text:latest"
-EMBEDDING_DIMENSIONS = 768
-EMBEDDING_PREFIX = "search_document: "
-TOKENIZER_NAME = "bert-base-uncased"
+DEFAULT_MODEL = "nomic-ai/nomic-embed-code"
+EMBEDDING_DIMENSIONS = 3584
+TOKENIZER_NAME = "nomic-ai/nomic-embed-code"
 
-# Embedding provider configuration
 EMBEDDING_PROVIDERS = {
-    "ollama": {
-        "model": "nomic-embed-text:latest",
-        "dimensions": 768,
-        "prefix": "search_document: ",
-        "query_prefix": "search_query: ",
-    },
     "huggingface": {
-        "model": "Salesforce/codet5p-110m-embedding",
-        "dimensions": 256,
-        "prefix": "",  # No prefix for HuggingFace
-        "query_prefix": "",
+        "model": "nomic-ai/nomic-embed-code",
+        "dimensions": 3584,
     },
 }
-DEFAULT_PROVIDER = "ollama"
+DEFAULT_PROVIDER = "huggingface"
 
 HF_TOKEN = os.getenv("HF_TOKEN", "")
+
+# Neo4j configuration
+NEO4J_URI = "bolt://localhost:7687"
+NEO4J_USER = "neo4j"
+NEO4J_PASSWORD = "testpassword"
+NEO4J_DATABASE = "neo4j"

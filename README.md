@@ -1,17 +1,18 @@
 # Code Vector Graph
 
-A Python CLI tool that transforms JavaScript/TypeScript code repositories into searchable vector embeddings stored in Qdrant, using Tree-sitter for language-aware parsing, BERT tokenizer for accurate sliding window chunking, and Ollama for local embedding generation.
+A Python CLI tool that transforms JavaScript/TypeScript code repositories into a searchable knowledge graph combining **vector embeddings** (Qdrant) with **code ontologies** (Neo4j). Uses Tree-sitter for language-aware parsing, HuggingFace for local embedding generation, and exposes an **MCP server** for AI-assisted code search.
 
 ## Features
 
-- **Language-Aware Parsing**: Uses Tree-sitter to parse JS/TS/TSX files and strip comments while preserving line number metadata
-- **Smart Chunking**: Token-aware sliding window chunking (512 tokens, 64 token overlap) using BERT tokenizer
-- **Local Embeddings**: Leverages Ollama's `nomic-embed-text` model for efficient local embedding generation
-- **Vector Storage**: Stores embeddings in Qdrant vector database with full metadata (file path, line numbers, function names)
-- **Deterministic IDs**: Uses content hashing for idempotent upserts - re-running won't create duplicates
-- **Health Checks**: Built-in connectivity checks for Ollama and Qdrant with clear error messages
+- **Language-Aware Parsing**: Tree-sitter parses JS/TS/TSX files, strips comments, and extracts rich AST metadata (functions, classes, imports, call sites, decorators, visibility)
+- **Smart Chunking**: Token-aware sliding window chunking using BERT tokenizer with line-boundary respect
+- **Local Embeddings**: HuggingFace `nomic-ai/nomic-embed-code` model (3584-dim) for code-specific embeddings
+- **Code Ontology Graph**: Neo4j stores a rich schema of Files, Classes, Functions, Methods, Variables, Imports, Interfaces, TypeAliases, and their relationships (CALLS, IMPORTS, INHERITS, CONTAINS, etc.)
+- **Hybrid Retrieval**: Combines vector similarity and graph traversal using Reciprocal Rank Fusion (RRF) for superior search quality
+- **MCP Server**: Expose `search_code` and `check_health` tools to any MCP-compatible AI client (Claude Desktop, OpenCode, etc.)
+- **Query CLI**: Standalone query tool with code-specific query expansion and OpenAI-powered RAG answers
+- **Deterministic IDs**: Content hashing for idempotent upserts — re-running won't create duplicates
 - **Dry-Run Mode**: Preview what would be processed without generating embeddings
-- **Multiple Embedding Backends**: Choose between Ollama (local, 768-dim) or HuggingFace (Salesforce/codet5p-110m-embedding, 256-dim)
 
 ## Supported File Types
 
@@ -23,7 +24,7 @@ A Python CLI tool that transforms JavaScript/TypeScript code repositories into s
 
 - Python 3.10+
 - Docker & Docker Compose
-- [Ollama](https://ollama.com/) installed and running
+- HuggingFace token (for `nomic-ai/nomic-embed-code` model access)
 
 ## Installation
 
@@ -31,7 +32,7 @@ A Python CLI tool that transforms JavaScript/TypeScript code repositories into s
 
 ```bash
 git clone <repository-url>
-cd codeVectorGraph
+cd code-vector-graph
 ```
 
 ### 2. Create virtual environment
@@ -47,61 +48,83 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 4. Start Qdrant (Vector Database)
+### 4. Set up environment variables
+
+```bash
+cp .env.example .env
+# Edit .env and add your HF_TOKEN
+```
+
+You need a HuggingFace token with access to `nomic-ai/nomic-embed-code`. Get one at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens).
+
+### 5. Start infrastructure services
 
 ```bash
 docker-compose up -d
 ```
 
-This starts Qdrant on:
-- REST API: http://localhost:6335
-- gRPC: http://localhost:6336
+This starts:
+- **Qdrant** (Vector Database): REST API `http://localhost:6333`, gRPC `http://localhost:6334`
+- **Neo4j** (Graph Database): Browser `http://localhost:7474`, Bolt `bolt://localhost:7687`
 
-### 5. Pull the embedding model
+### 6. Download the embedding model
 
 ```bash
-ollama pull nomic-embed-text:latest
+python download_model.py
 ```
 
-## Embedding Providers
+This downloads `nomic-ai/nomic-embed-code` (~440MB) to `~/.cache/huggingface/`. The model is cached for subsequent runs.
 
-| Feature | Ollama (nomic-embed-text) | HuggingFace (codet5p-110m-embedding) |
-|---------|---------------------------|--------------------------------------|
-| **Dimensions** | 768 | 256 |
-| **Model Size** | ~275MB | ~440MB |
-| **Local/Offline** | Yes | Yes (after first download) |
-| **Prefixes** | `search_document:` / `search_query:` | None |
-| **Requirements** | Ollama server | PyTorch + Transformers |
-| **Best For** | General text/code | Code-specific embeddings |
+## Architecture
 
-### Security Note
-HuggingFace provider uses `trust_remote_code=True` which executes code from the model repository. Only use models from trusted sources.
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│   Scanner   │────▶│   Parser    │────▶│   Chunker   │
+│  (discover  │     │(Tree-sitter │     │(BERT tokens │
+│   JS/TS)    │     │ + metadata) │     │+ sliding)   │
+└─────────────┘     └─────────────┘     └──────┬──────┘
+                                                │
+                       ┌─────────────┐          │
+                       │    Store    │◀─────────┤
+                       │  (Qdrant)   │    ┌─────┴──────┐
+                       └─────────────┘    │  Embedder   │
+                                          │(HuggingFace)│
+                       ┌─────────────┐    └─────────────┘
+                       │  GraphStore │◀─── Graph Extractor
+                       │   (Neo4j)   │    (AST ontology)
+                       └─────────────┘
+                              │
+                     ┌────────┴────────┐
+                     │ Hybrid Retriever│
+                     │  (RRF fusion)   │
+                     └────────┬────────┘
+                              │
+                    ┌─────────┴─────────┐
+                    │    MCP Server     │
+                    │  (search_code,    │
+                    │   check_health)   │
+                    └───────────────────┘
+```
+
+### Pipeline Flow
+
+1. **Scan**: Discover all JS/TS files (excludes `node_modules`, `.git`, etc.)
+2. **Parse**: Parse each file with Tree-sitter, strip comments, extract AST metadata (functions, classes, imports, call sites, decorators, visibility)
+3. **Chunk**: Create overlapping chunks using BERT tokenizer (400 tokens, 64 overlap, line-based)
+4. **Embed**: Generate 3584-dim embeddings using HuggingFace `nomic-ai/nomic-embed-code`
+5. **Store**: Upsert chunks into Qdrant with full metadata
+6. **Graph Extract**: Extract code ontology entities (Files, Classes, Functions, Methods, Variables, Imports, Interfaces, TypeAliases) and relationships (CALLS, IMPORTS, INHERITS, CONTAINS, REFERENCES, etc.)
+7. **Graph Store**: Upsert nodes and relationships into Neo4j
 
 ## Usage
 
-### Basic Usage
+### Index a Repository
 
-Process a repository and store embeddings:
+Process a repository and store embeddings + graph:
 
 ```bash
 python main.py --repo-path /path/to/your/repo
 ```
-
-### Using Ollama (Default)
-
-```bash
-python main.py --repo-path /path/to/repo
-# or explicitly
-python main.py --repo-path /path/to/repo --embedding-provider ollama
-```
-
-### Using HuggingFace
-
-```bash
-python main.py --repo-path /path/to/repo --embedding-provider huggingface
-```
-
-Note: First run will download the ~440MB model to `~/.cache/huggingface/`.
 
 ### Dry Run (Preview Mode)
 
@@ -111,9 +134,13 @@ See what would be processed without generating embeddings:
 python main.py --repo-path /path/to/your/repo --dry-run
 ```
 
-### Verbose Output
+### Skip Graph Ingestion
 
-Show detailed progress:
+```bash
+python main.py --repo-path /path/to/your/repo --no-graph
+```
+
+### Verbose Output
 
 ```bash
 python main.py --repo-path /path/to/your/repo --verbose
@@ -126,11 +153,10 @@ python main.py \
   --repo-path /path/to/repo \
   --qdrant-url http://localhost:6333 \
   --collection-name my_code_chunks \
-  --ollama-url http://localhost:11434 \
-  --model nomic-embed-text:latest \
-  --chunk-size 512 \
+  --chunk-size 400 \
   --chunk-overlap 64 \
   --batch-size 64 \
+  --neo4j-uri bolt://localhost:7687 \
   --verbose
 ```
 
@@ -141,56 +167,150 @@ python main.py \
 | `--repo-path` | *required* | Path to the repository to process |
 | `--qdrant-url` | `http://localhost:6333` | Qdrant server URL |
 | `--collection-name` | `code_chunks` | Qdrant collection name |
-| `--ollama-url` | `http://localhost:11434` | Ollama server URL |
-| `--model` | `nomic-embed-text:latest` | Ollama embedding model |
-| `--embedding-provider` | `ollama` | Embedding backend: `ollama` or `huggingface` |
-| `--chunk-size` | `512` | Tokens per chunk |
+| `--chunk-size` | `400` | Tokens per chunk |
 | `--chunk-overlap` | `64` | Token overlap between chunks |
 | `--batch-size` | `64` | Embedding batch size |
+| `--no-graph` | `false` | Skip Neo4j graph ingestion |
+| `--neo4j-uri` | `bolt://localhost:7687` | Neo4j bolt URI |
+| `--neo4j-user` | `neo4j` | Neo4j username |
+| `--neo4j-password` | `testpassword` | Neo4j password |
 | `--dry-run` | `false` | Process without embedding/storing |
 | `--verbose` | `false` | Enable verbose logging |
 
-## Architecture
+## Querying
 
-```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│   Scanner   │────▶│   Parser    │────▶│   Chunker   │
-│  (discover  │     │(Tree-sitter │     │(BERT tokens │
-│   JS/TS)    │     │ + strip)    │     │+ sliding)   │
-└─────────────┘     └─────────────┘     └──────┬──────┘
-                                                │
-                       ┌─────────────┐          │
-                       │    Store    │◀─────────┘
-                       │  (Qdrant)   │    ┌─────────────┐
-                       └─────────────┘    │  Embedder   │
-                                          │   (Ollama)  │
-                                          └─────────────┘
+### Query CLI
+
+Ask questions about your indexed code using retrieval + OpenAI:
+
+```bash
+python query.py --question "How does authentication work?"
 ```
 
-### Pipeline Flow
+```bash
+# Hybrid retrieval (vector + graph with RRF fusion)
+python query.py --question "Where is the database connection established?" --retrieval hybrid
 
-1. **Scan**: Discover all JS/TS files (excludes `node_modules`, `.git`, etc.)
-2. **Parse**: Parse each file with Tree-sitter, strip comments, preserve line numbers
-3. **Chunk**: Create overlapping chunks using BERT tokenizer (512 tokens, 64 overlap)
-4. **Embed**: Generate embeddings using Ollama with `search_document:` prefix
-5. **Store**: Upsert chunks into Qdrant with full metadata
+# Filter by language or file pattern
+python query.py --question "What API routes exist?" --language typescript --file-pattern "src/routes/*"
+
+# Expand query with code-specific synonyms
+python query.py --question "What functions handle errors?" --expand-query
+```
+
+#### Query CLI Options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--question` | *required* | Your question about the code |
+| `--retrieval` | `vector` | Retrieval mode: `vector`, `hybrid` (vector+graph RRF), `graph` |
+| `--top-k` | `20` | Number of code chunks to retrieve |
+| `--language` | *none* | Filter: `javascript`, `typescript`, `tsx` |
+| `--file-pattern` | *none* | Filter by file path glob (e.g. `*.service.ts`) |
+| `--min-score` | `0.0` | Minimum similarity score (0.0–1.0) |
+| `--expand-query` | `false` | Expand query with code synonyms |
+| `--vector-weight` | `0.7` | Vector weight in hybrid mode |
+| `--graph-weight` | `0.3` | Graph weight in hybrid mode |
+
+### MCP Server
+
+The project includes an MCP (Model Context Protocol) server that exposes code search as tools for AI clients like Claude Desktop or OpenCode.
+
+#### Configure in Claude Desktop
+
+Add to your `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "code-vector-graph": {
+      "type": "stdio",
+      "command": "/path/to/code-vector-graph/.venv/bin/python",
+      "args": ["/path/to/code-vector-graph/mcp_server.py"]
+    }
+  }
+}
+```
+
+#### Configure in OpenCode
+
+The project includes `.mcp.json` — OpenCode picks this up automatically.
+
+#### Available MCP Tools
+
+| Tool | Description |
+|------|-------------|
+| `search_code` | Search indexed code using vector embeddings and/or graph relationships |
+| `check_health` | Check connectivity of embedder, Qdrant, and Neo4j |
+
+#### `search_code` Parameters
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `query` | *required* | Natural language or code search query |
+| `mode` | `hybrid` | `vector`, `hybrid` (recommended), or `graph` |
+| `top_k` | `10` | Number of results |
+| `language` | *none* | Filter: `javascript`, `typescript`, `tsx` |
+| `file_pattern` | *none* | File path glob filter |
+| `min_score` | `0.0` | Minimum similarity score |
+| `vector_weight` | `0.7` | Vector weight (hybrid mode) |
+| `graph_weight` | `0.3` | Graph weight (hybrid mode) |
+
+## Code Ontology (Neo4j Graph)
+
+### Node Types
+
+| Label | Description | Key Properties |
+|-------|-------------|----------------|
+| `File` | Source file | path, language, file_hash, imports, exports |
+| `Module` | ES module | name, path, is_package |
+| `Class` | Class declaration | name, start_line, end_line, is_exported, visibility, decorators, parent_class |
+| `Function` | Function declaration | name, start_line, end_line, is_async, parameters, call_sites, decorators |
+| `Method` | Class method | name, parent_class, is_async, parameters, call_sites |
+| `Variable` | Variable declaration | name, is_constant, type_annotation, visibility |
+| `Import` | Import statement | module, names, is_wildcard |
+| `Interface` | TypeScript interface | name, extends |
+| `TypeAlias` | TypeScript type alias | name, type_expression |
+| `Chunk` | Code chunk (linked to Qdrant) | qdrant_id, file_path, start_line, end_line, token_count |
+
+### Relationship Types
+
+| Type | Description |
+|------|-------------|
+| `CONTAINS` | File contains class/function/variable |
+| `CALLS` | Function calls another function |
+| `IMPORTS` | File/module imports from another |
+| `INHERITS` | Class extends another class |
+| `EXPORTS` | File exports a symbol |
+| `REFERENCES` | Symbol references another |
+| `DEFINES` | Module defines a symbol |
+| `TYPE_OF` | Type relationship |
+| `DEPENDS_ON` | Module dependency |
 
 ## Project Structure
 
 ```
 .
 ├── main.py                    # CLI entry point and pipeline orchestration
-├── docker-compose.yml         # Qdrant vector database
+├── download_model.py          # Pre-download HuggingFace embedding model
+├── mcp_server.py              # MCP server (search_code, check_health tools)
+├── query.py                   # Query CLI with RAG + OpenAI
+├── docker-compose.yml         # Qdrant + Neo4j services
 ├── requirements.txt           # Python dependencies
+├── .mcp.json                  # MCP server config for OpenCode
 ├── src/
 │   ├── __init__.py
-│   ├── config.py             # Constants and configuration
-│   ├── scanner.py            # File discovery
-│   ├── parser.py             # Tree-sitter parsing & comment stripping
-│   ├── chunker.py            # Token-aware sliding window chunking
-│   ├── embedder.py           # Ollama embedding integration
-│   ├── store.py              # Qdrant vector store
-│   └── cli.py                # CLI argument parsing
+│   ├── config.py              # Constants and configuration
+│   ├── cli.py                 # CLI argument parsing
+│   ├── scanner.py             # File discovery
+│   ├── parser.py              # Tree-sitter parsing, comment stripping, AST metadata
+│   ├── chunker.py             # Token-aware sliding window chunking
+│   ├── embedder.py            # HuggingFace embedding (nomic-ai/nomic-embed-code)
+│   ├── store.py               # Qdrant vector store
+│   ├── graph_schema.py        # Neo4j node/relationship schema definitions
+│   ├── graph_extractor.py     # AST-to-graph entity extraction
+│   ├── graph_store.py         # Neo4j CRUD operations
+│   └── hybrid_retriever.py    # Vector + graph hybrid search with RRF
 ├── tests/
 │   ├── __init__.py
 │   ├── test_config.py
@@ -200,12 +320,9 @@ python main.py \
 │   ├── test_embedder.py
 │   ├── test_store.py
 │   └── test_integration.py
-│   └── fixtures/             # Test files
-│       ├── sample.js
-│       ├── sample.ts
-│       ├── component.tsx
-│       └── ...
-└── qdrant_storage/           # Qdrant persistent data (gitignored)
+│   └── fixtures/              # Test files
+├── qdrant_storage/            # Qdrant persistent data (gitignored)
+└── neo4j_data/                # Neo4j persistent data (gitignored)
 ```
 
 ## Running Tests
@@ -225,55 +342,44 @@ python -m pytest tests/ --cov=src --cov-report=term-missing
 
 ### Embedding Model
 
-- **Model**: `nomic-embed-text:latest`
-- **Dimensions**: 768
-- **Tokenizer**: bert-base-uncased
-- **Prefix**: `search_document:` (prepended to all chunks)
+- **Model**: `nomic-ai/nomic-embed-code`
+- **Dimensions**: 3584
+- **Tokenizer**: `nomic-ai/nomic-embed-code` (BERT-based)
+- **Device**: Auto-detects MPS (Apple Silicon) > CUDA > CPU
 - **Distance Metric**: Cosine similarity in Qdrant
 
 ### Chunking Strategy
 
-- **Chunk Size**: 512 tokens (configurable)
+- **Chunk Size**: 400 tokens (default, configurable)
 - **Overlap**: 64 tokens (configurable)
 - **Line-based**: Never splits mid-line for better context preservation
-- **Tokenizer**: Uses HuggingFace `tokenizers` library with BERT tokenizer
 
-### Comment Stripping
+### Hybrid Retrieval (RRF)
 
-Uses Tree-sitter AST parsing to remove:
-- `//` line comments
-- `/* */` block comments
-- `/** */` JSDoc comments
+Hybrid search combines vector similarity with graph traversal using **Reciprocal Rank Fusion**:
 
-Line numbers are mapped to the original source before comment removal.
+```
+fused_score = (vector_weight / (k + vector_rank)) + (graph_weight / (k + graph_rank))
+```
 
-### Metadata Stored
+Default weights: vector=0.7, graph=0.3, k=60.
 
-Each vector includes:
-- `file_path`: Path to source file
-- `language`: Detected language (javascript, typescript, tsx)
-- `start_line`: Starting line in original source
-- `end_line`: Ending line in original source
-- `chunk_index`: Position within file (0-indexed)
-- `function_name`: Enclosing function name (if applicable)
-- `total_chunks`: Total chunks in file
-- `text_content`: The chunk text content
+### Metadata Stored Per Chunk
+
+Each vector includes: `file_path`, `language`, `start_line`, `end_line`, `chunk_index`, `function_name`, `class_name`, `parent_function`, `imports`, `exports`, `symbols_defined`, `call_sites`, `is_exported`, `visibility`, `decorators`, `file_hash`, `text_content`.
 
 ## Troubleshooting
 
-### Ollama Connection Error
+### HuggingFace Model Not Found
 
 ```
-ERROR: Cannot connect to Ollama or model is not available.
+ERROR: Failed to load model 'nomic-ai/nomic-embed-code'.
 ```
 
 **Solution**:
 ```bash
-# Start Ollama
-ollama serve
-
-# Pull the model
-ollama pull nomic-embed-text:latest
+# Ensure HF_TOKEN is set in .env
+python download_model.py
 ```
 
 ### Qdrant Connection Error
@@ -284,22 +390,20 @@ ERROR: Cannot connect to Qdrant server.
 
 **Solution**:
 ```bash
-# Start Qdrant
 docker-compose up -d
-
-# Verify it's running
 curl http://localhost:6333/healthz
 ```
 
-### Port Conflicts
+### Neo4j Connection Error
 
-If ports 6333 or 6334 are already in use:
+Neo4j is optional — the pipeline continues without it if unavailable.
 
 ```bash
-# Stop existing containers
-sudo lsof -ti:6333 | xargs kill -9
+# Check Neo4j status
+docker-compose ps neo4j
 
-# Or modify docker-compose.yml to use different ports
+# View logs
+docker-compose logs neo4j
 ```
 
 ### Memory Issues
@@ -310,49 +414,36 @@ For large repositories, reduce batch size:
 python main.py --repo-path /large/repo --batch-size 32
 ```
 
-### HuggingFace Model Download
-
-First use requires downloading the model (~440MB):
-
-```
-Loading HuggingFace model Salesforce/codet5p-110m-embedding...
-```
-
-This is cached in `~/.cache/huggingface/` for subsequent runs.
-
-## Development
-
-### Adding New File Types
-
-Edit `src/config.py` and add to `SUPPORTED_EXTENSIONS`:
-
-```python
-SUPPORTED_EXTENSIONS = {
-    # ... existing extensions ...
-    ".vue": {"language": "vue", "grammar": "vue"},
-}
-```
-
-### Environment Variables
-
-Create a `.env` file for local development (optional):
+## Quick Start Summary
 
 ```bash
-QDRANT_URL=http://localhost:6333
-OLLAMA_URL=http://localhost:11434
+# 1. Install
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+
+# 2. Configure
+cp .env.example .env  # Add your HF_TOKEN
+
+# 3. Start services
+docker-compose up -d
+
+# 4. Download model
+python download_model.py
+
+# 5. Index a repository
+python main.py --repo-path /path/to/repo --verbose
+
+# 6. Query
+python query.py --question "How does auth work?" --retrieval hybrid
+
+# 7. Or use MCP server with your AI client
+python mcp_server.py
 ```
 
 ## License
 
 [Your License Here]
 
-## Contributing
-
-Contributions welcome! Please ensure:
-- Tests pass: `python -m pytest tests/`
-- Code follows existing patterns
-- New features include tests
-
 ---
 
-Built with Tree-sitter, LangChain, Qdrant, and Ollama.
+Built with Tree-sitter, HuggingFace Transformers, Qdrant, Neo4j, and MCP.

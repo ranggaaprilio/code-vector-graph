@@ -3,3 +3,4 @@ __pycache__/
 .venv/
 qdrant_storage/
 .env
+neo4j_data/

@@ -65,7 +65,7 @@ class TestVectorStoreInit:
         """Test initialization with default parameters."""
         store = VectorStore()
         assert store.collection_name == "code_chunks"
-        assert store.embedding_dimensions == 768
+        assert store.embedding_dimensions == 3584
 
     def test_init_with_custom_params(self):
         """Test initialization with custom parameters."""
