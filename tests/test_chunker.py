@@ -71,11 +71,14 @@ def test_single_line_overflow_handling():
     line = "word " * 100  # many tokens in a single line
     text = line.strip()
     chunks = chunk_text(text, start_line=1, end_line=1, chunk_size=20, chunk_overlap=4, file_path="f.py", language="py")
-    assert len(chunks) == 1
-    ch = chunks[0]
-    assert ch["metadata"]["start_line"] == 1
-    assert ch["metadata"]["end_line"] == 1
-    assert ch["text"] == text
+    # Long lines are now split into multiple chunks at token boundaries
+    assert len(chunks) > 1
+    # Each chunk should be within token limit
+    for ch in chunks:
+        assert ch["metadata"]["start_line"] == 1
+        assert ch["metadata"]["end_line"] == 1
+        token_count = count_tokens(ch["text"], tok)
+        assert token_count <= 20
 
 
 def test_chunk_file_integration():

@@ -62,15 +62,36 @@ class HuggingFaceEmbedder(Embedder):
             self.device = "cpu"
 
         logger.info(f"Loading HuggingFace model {self.model_name}...")
+
+        is_rocm = (
+            torch.cuda.is_available()
+            and hasattr(torch.version, "hip")
+            and torch.version.hip is not None
+        )
+        use_float32 = self.device == "mps" or is_rocm
+
+        if use_float32:
+            dtype = torch.float32
+            if is_rocm:
+                logger.info(
+                    "ROCm (AMD GPU) detected - using float32 instead of bfloat16"
+                )
+        else:
+            """testing float"""
+            dtype = torch.bfloat16
+        logger.info(f"Using dtype={dtype} for device={self.device}")
+
         try:
             self.tokenizer = AutoTokenizer.from_pretrained(
                 self.model_name, trust_remote_code=True, local_files_only=True
             )
             self.model = AutoModel.from_pretrained(
-                self.model_name, trust_remote_code=True, local_files_only=True,
-                torch_dtype=torch.bfloat16,
+                self.model_name,
+                trust_remote_code=True,
+                local_files_only=True,
+                torch_dtype=dtype,
             )
-        except Exception as e:
+        except (OSError, RuntimeError, ValueError) as e:
             logger.error(f"Failed to load HuggingFace model '{self.model_name}': {e}")
             print(
                 f"\nERROR: Failed to load model '{self.model_name}'.",
@@ -91,12 +112,16 @@ class HuggingFaceEmbedder(Embedder):
         self.model.eval()
         try:
             self.model.to(self.device)
-        except Exception as e:
-            logger.warning(f"Failed to move model to {self.device}: {e}. Falling back to CPU.")
+        except (RuntimeError, ValueError, OSError) as e:
+            logger.warning(
+                f"Failed to move model to {self.device}: {e}. Falling back to CPU."
+            )
             self.device = "cpu"
             self.model.to(self.device)
 
-        logger.info(f"Initialized HuggingFaceEmbedder with model={self.model_name}, device={self.device}")
+        logger.info(
+            f"Initialized HuggingFaceEmbedder with model={self.model_name}, device={self.device}"
+        )
 
     def _token_truncation_warnings(self, texts: List[str]) -> int:
         count = 0
@@ -133,14 +158,18 @@ class HuggingFaceEmbedder(Embedder):
         total = len(texts)
         result_chunks: List[dict] = []
         total_batches = (total + batch_size - 1) // batch_size
-        logger.info(f"Starting embedding of {total} chunks in {total_batches} batches (batch_size={batch_size})...")
+        logger.info(
+            f"Starting embedding of {total} chunks in {total_batches} batches (batch_size={batch_size})..."
+        )
 
         with torch.no_grad():
             for batch_idx in range(total_batches):
                 start = batch_idx * batch_size
                 end = min(start + batch_size, total)
                 batch_texts = texts[start:end]
-                logger.info(f"Embedding batch {batch_idx + 1}/{total_batches} ({len(batch_texts)} chunks)...")
+                logger.info(
+                    f"Embedding batch {batch_idx + 1}/{total_batches} ({len(batch_texts)} chunks)..."
+                )
 
                 inputs = self.tokenizer(
                     batch_texts,
@@ -149,8 +178,12 @@ class HuggingFaceEmbedder(Embedder):
                     max_length=512,
                     return_tensors="pt",
                 )
+
+                logger.info("Input variable Done")
                 for k, v in inputs.items():
+                    logger.info(f" loop {k}: {v.shape}")
                     if isinstance(v, torch.Tensor):
+                        logger.debug(f"    moving {k} to device")
                         inputs[k] = v.to(self.device)
 
                 logger.debug(f"Running model forward for batch {batch_idx + 1}...")
@@ -169,7 +202,9 @@ class HuggingFaceEmbedder(Embedder):
                 embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=-1)
 
                 embeddings_list = embeddings.cpu().tolist()
-                logger.info(f"Batch {batch_idx + 1}/{total_batches} embedded successfully")
+                logger.info(
+                    f"Batch {batch_idx + 1}/{total_batches} embedded successfully"
+                )
 
                 del outputs, last_hidden, embeddings
                 for v in inputs.values():

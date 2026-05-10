@@ -165,3 +165,61 @@ python -m pytest tests/ --cov=src --cov-report=term-missing
 - **Chunking**: 512 tokens with 64 overlap, line-based (never mid-line)
 - **Memory control**: Files processed in batches of 50
 - **Trust Remote Code**: HuggingFace uses `trust_remote_code=True` - only use trusted models
+
+---
+
+## CROSS-IDE AGENT COMPATIBILITY
+
+This project supports both **Claude Code** and **OpenCode** IDEs with compatible agent definitions.
+
+### Available Agents
+
+| Agent | Claude Code | OpenCode | Purpose |
+|-------|-------------|----------|---------|
+| `code-graph-explorer` | `.claude/agents/code-graph-explorer.md` | Built-in + `.opencode/agents/code-graph-explorer.md` | Codebase exploration via MCP |
+
+### Using Agents
+
+**OpenCode:**
+```python
+task(
+    subagent_type="code-graph-explorer",
+    load_skills=[],
+    prompt="[Context]\n[Goal]\n[Request]",
+    run_in_background=False
+)
+```
+
+**Claude Code:**
+```
+/agent code-graph-explorer
+[Your question about code structure or flow]
+```
+
+### Directory Structure
+
+```
+.
+├── .claude/
+│   ├── agents/
+│   │   └── code-graph-explorer.md    # Claude-specific agent definition
+│   └── settings.json                  # Claude settings (empty)
+├── .opencode/
+│   ├── agents/
+│   │   └── code-graph-explorer.md    # OpenCode agent documentation
+│   └── settings.json                  # OpenCode settings + MCP config
+└── AGENTS.md                          # This file
+```
+
+### Agent Capabilities
+
+All agents use the **code-vector-graph MCP** for:
+- Vector similarity search across code
+- Graph relationship traversal (Neo4j)
+- Hybrid search combining both approaches
+
+**Tools available:**
+- `code-vector-graph_search_code` - Semantic code search
+- `code-vector-graph_check_health` - Service health checks
+
+See individual agent definitions for detailed usage examples.
