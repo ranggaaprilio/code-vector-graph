@@ -62,3 +62,21 @@ def test_point_to_graph_prefers_authoritative_graph_payload():
     )
 
     assert graph_data == {"nodes": graph_nodes, "relationships": graph_relationships}
+
+
+def test_point_to_graph_falls_back_when_graph_payload_is_empty():
+    payload = {
+        "file_path": "/repo/src/app.ts",
+        "language": "typescript",
+        "start_line": 1,
+        "end_line": 1,
+        "chunk_index": 0,
+        "total_chunks": 1,
+        "function_name": "fallbackFunction",
+        "graph_nodes": [],
+        "graph_relationships": [],
+    }
+
+    graph_data = point_to_graph("point-1", payload)
+
+    assert any(node["label"] == "Function" for node in graph_data["nodes"])

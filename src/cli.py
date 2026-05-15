@@ -76,6 +76,13 @@ Examples:
     )
 
     parser.add_argument(
+        "--glossary-file",
+        type=str,
+        default="glossary.yml",
+        help="Manual glossary YAML file path (default: glossary.yml)",
+    )
+
+    parser.add_argument(
         "--no-graph",
         action="store_true",
         help="Skip Neo4j graph ingestion",

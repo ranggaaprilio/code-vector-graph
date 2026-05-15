@@ -95,6 +95,7 @@ class TestCLIArgumentParsing:
         assert args.chunk_size == DEFAULT_CHUNK_SIZE
         assert args.chunk_overlap == DEFAULT_CHUNK_OVERLAP
         assert args.batch_size == 64
+        assert args.glossary_file == "glossary.yml"
         assert args.dry_run is False
         assert args.verbose is False
 
@@ -107,6 +108,7 @@ class TestCLIArgumentParsing:
             "--chunk-size", "256",
             "--chunk-overlap", "32",
             "--batch-size", "32",
+            "--glossary-file", "docs/glossary.yml",
             "--dry-run",
             "--verbose",
         ])
@@ -115,6 +117,7 @@ class TestCLIArgumentParsing:
         assert args.chunk_size == 256
         assert args.chunk_overlap == 32
         assert args.batch_size == 32
+        assert args.glossary_file == "docs/glossary.yml"
         assert args.dry_run is True
         assert args.verbose is True
 

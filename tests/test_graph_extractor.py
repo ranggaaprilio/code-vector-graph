@@ -60,6 +60,21 @@ class TestGraphExtractor:
         nodes = res.get("nodes", [])
         assert any(n.get("label") == "Variable" for n in nodes)
 
+    def test_extract_field_node(self, tmp_path):
+        path = tmp_path / "sample_field.ts"
+        path.write_text("class User {\n  name: string;\n}\n")
+        parsed_doc = parsed(str(path), "typescript")
+        assert parsed_doc is not None
+        if extract_graph_entities is None:
+            pytest.skip("graph_extractor not implemented yet")
+        res = extract_graph_entities(parsed_doc.get("tree"), parsed_doc.get("source_bytes"),
+                                   str(path), "typescript", "fieldhash")
+        nodes = res.get("nodes", [])
+        assert any(
+            n.get("label") == "Field" and n.get("properties", {}).get("name") == "name"
+            for n in nodes
+        )
+
     def test_extract_import_node(self):
         parsed_doc = parsed("tests/fixtures/sample.ts", "typescript")
         assert parsed_doc is not None
