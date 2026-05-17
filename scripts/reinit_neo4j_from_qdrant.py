@@ -77,7 +77,7 @@ def _dedupe(items: Iterable[dict[str, Any]], key_fields: tuple[str, ...]) -> lis
 
 def point_to_graph(point_id: str, payload: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
     """Convert one Qdrant point payload into Neo4j graph nodes and relationships."""
-    if "graph_nodes" in payload or "graph_relationships" in payload:
+    if payload.get("graph_nodes") or payload.get("graph_relationships"):
         return {
             "nodes": payload.get("graph_nodes") or [],
             "relationships": payload.get("graph_relationships") or [],

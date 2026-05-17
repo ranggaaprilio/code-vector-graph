@@ -102,6 +102,10 @@ class VectorStore:
             ("is_exported", PayloadSchemaType.BOOL),
             ("visibility", PayloadSchemaType.KEYWORD),
             ("file_hash", PayloadSchemaType.KEYWORD),
+            ("term", PayloadSchemaType.KEYWORD),
+            ("kind", PayloadSchemaType.KEYWORD),
+            ("source", PayloadSchemaType.KEYWORD),
+            ("symbol_id", PayloadSchemaType.KEYWORD),
         ]
 
         for field_name, schema_type in indexes:
@@ -199,7 +203,7 @@ class VectorStore:
         chunk_index = chunk["chunk_index"]
         file_hash = chunk.get("file_hash", "")
 
-        point_id = self._generate_deterministic_id(file_path, chunk_index, file_hash)
+        point_id = chunk.get("id") or self._generate_deterministic_id(file_path, chunk_index, file_hash)
 
         payload = {
             "file_path": file_path,
@@ -225,6 +229,12 @@ class VectorStore:
             "file_hash": file_hash,
             "graph_nodes": chunk.get("graph_nodes", []),
             "graph_relationships": chunk.get("graph_relationships", []),
+            "term": chunk.get("term"),
+            "kind": chunk.get("kind"),
+            "summary": chunk.get("summary"),
+            "source": chunk.get("source"),
+            "confidence": chunk.get("confidence"),
+            "symbol_id": chunk.get("symbol_id"),
         }
 
         return PointStruct(

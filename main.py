@@ -23,6 +23,11 @@ from src.config import (
 from src.embedder import create_embedder
 from src.graph_extractor import extract_graph_entities
 from src.graph_store import GraphStore
+from src.glossary import (
+    build_glossary_graph,
+    extract_comment_glossary,
+    load_manual_glossary,
+)
 from src.parser import parse_file, extract_ast_metadata
 from src.scanner import discover_files
 from src.store import VectorStore, get_collection_name
@@ -97,6 +102,7 @@ def run_pipeline(args) -> dict:
         "chunks_stored": 0,
         "nodes_created": 0,
         "relationships_created": 0,
+        "glossary_entries": 0,
     }
 
     logger.info(f"Starting pipeline for repository: {args.repo_path}")
@@ -118,6 +124,7 @@ def run_pipeline(args) -> dict:
     embedder = None
     store = None
     graph_store = None
+    manual_glossary_entries = []
 
     if not args.dry_run:
         embedder = create_embedder()
@@ -149,6 +156,13 @@ def run_pipeline(args) -> dict:
                 graph_store.create_constraints()
         else:
             logger.info("Graph ingestion disabled via --no-graph")
+
+        manual_glossary_entries = load_manual_glossary(
+            getattr(args, "glossary_file", "glossary.yml"),
+            args.repo_path,
+        )
+        if manual_glossary_entries:
+            logger.info(f"Loaded {len(manual_glossary_entries)} manual glossary entries")
     else:
         logger.info("Dry-run mode: skipping component initialization and health checks")
 
@@ -165,6 +179,7 @@ def run_pipeline(args) -> dict:
         # Accumulate chunks for this batch only
         batch_chunks = []
         batch_graph_data = []
+        batch_code_chunks_created = 0
 
         for file_info in file_batch:
             file_path = file_info["path"]
@@ -194,6 +209,25 @@ def run_pipeline(args) -> dict:
                     language,
                     file_hash,
                 )
+                comment_glossary_entries = extract_comment_glossary(
+                    parsed["tree"],
+                    parsed["source_bytes"],
+                    file_path,
+                    graph_data,
+                )
+                glossary_nodes, glossary_relationships, glossary_chunks = build_glossary_graph(
+                    graph_data,
+                    file_path,
+                    language,
+                    manual_entries=manual_glossary_entries,
+                    comment_entries=comment_glossary_entries,
+                )
+                if glossary_nodes:
+                    graph_data["nodes"].extend(glossary_nodes)
+                    graph_data["relationships"].extend(glossary_relationships)
+                    stats["glossary_entries"] += len(glossary_nodes)
+            else:
+                glossary_chunks = []
 
             # Free large objects immediately after metadata extraction
             parsed.pop("source_bytes", None)
@@ -276,14 +310,16 @@ def run_pipeline(args) -> dict:
                     batch_graph_data.append(graph_data)
                     stats["files_graphed"] += 1
 
+            batch_code_chunks_created += len(chunks)
             batch_chunks.extend(chunks)
+            batch_chunks.extend(glossary_chunks)
             
             # Free parsed dict to release stripped_text memory
             parsed.clear()
             logger.debug(f"Created {len(chunks)} chunks from {file_path}")
 
-        total_chunks_created += len(batch_chunks)
-        logger.info(f"Created {len(batch_chunks)} chunks from this batch (total: {total_chunks_created})")
+        total_chunks_created += batch_code_chunks_created
+        logger.info(f"Created {batch_code_chunks_created} code chunks from this batch (total: {total_chunks_created})")
 
         # Step 4: Skip embedding/storage in dry-run mode
         if args.dry_run:
@@ -374,6 +410,8 @@ def run_pipeline(args) -> dict:
         print(f"  Files graphed:   {stats['files_graphed']}")
         print(f"  Nodes created:   {stats['nodes_created']}")
         print(f"  Relationships:   {stats['relationships_created']}")
+    if stats["glossary_entries"] > 0:
+        print(f"  Glossary entries: {stats['glossary_entries']}")
 
     return stats
 
