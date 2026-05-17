@@ -1,0 +1,1 @@
+- [Project Pipeline Sort Architecture](project_pipeline_sort_architecture.md) — DetailQueryBuilder sort patterns, existing sortBy keys, modifiedDate/modifiedAt field disambiguation in onebid

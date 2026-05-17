@@ -16,6 +16,7 @@ NODE_LABELS = frozenset([
     "Class",
     "Function",
     "Method",
+    "Field",
     "Variable",
     "Import",
     "Interface",
@@ -34,6 +35,7 @@ RELATIONSHIP_TYPES = frozenset([
     "DEFINES",
     "TYPE_OF",
     "DEPENDS_ON",
+    "HAS_GLOSSARY",
 ])
 
 # Node property schemas keyed by label
@@ -83,6 +85,15 @@ NODE_PROPERTIES = {
         "is_async": bool,
         "parent_class": str | None,
         "call_sites": list[str],
+    },
+    "Field": {
+        "name": str,
+        "start_line": int,
+        "end_line": int,
+        "is_exported": bool,
+        "visibility": str,
+        "type_annotation": str | None,
+        "parent_class": str | None,
     },
     "Variable": {
         "name": str,
@@ -134,6 +145,17 @@ NODE_PROPERTIES = {
         "token_count": int,
         "decorators": list[str],
         "file_hash": str,
+    },
+    "GlossaryEntry": {
+        "term": str,
+        "kind": str,
+        "summary": str,
+        "source": str,
+        "confidence": float,
+        "file_path": str,
+        "symbol_id": str,
+        "created_at": str,
+        "updated_at": str,
     },
 }
 

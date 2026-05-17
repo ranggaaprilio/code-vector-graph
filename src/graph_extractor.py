@@ -116,10 +116,6 @@ def extract_graph_entities(tree: Tree, source_bytes: bytes, file_path: str,
             relationships.append(_rel("CONTAINS", file_id, cls_id))
             relationships.append(_rel("DEFINES", file_id, cls_id))
 
-            if parent_class:
-                parent_cls_id = _node_id(file_path, "Class", parent_class, 1)
-                relationships.append(_rel("INHERITS", cls_id, parent_cls_id))
-
             if is_exported:
                 relationships.append(_rel("EXPORTS", file_id, cls_id))
 
@@ -161,6 +157,43 @@ def extract_graph_entities(tree: Tree, source_bytes: bytes, file_path: str,
             added_ids[f"Method:{name}:{start_line}"] = method_id
             relationships.append(_rel("CONTAINS", parent_class_id, method_id))
             relationships.append(_rel("DEFINES", file_id, method_id))
+            return
+
+        # Class fields/properties
+        if t in ("public_field_definition", "field_definition") and parent_class_id:
+            name_node = n.child_by_field_name("name")
+            if name_node is None:
+                name_node = next(
+                    (child for child in n.named_children if child.type in ("property_identifier", "identifier")),
+                    None,
+                )
+            name = _text(name_node) if name_node else ""
+            if not name:
+                return
+            start_line = n.start_point[0] + 1
+            end_line = n.end_point[0] + 1
+            is_exported = _is_exported(n)
+            visibility = "public" if is_exported else "private"
+            type_node = n.child_by_field_name("type")
+            type_annotation = _text(type_node) if type_node else None
+
+            field_id = _node_id(file_path, "Field", name, start_line)
+            nodes.append({
+                "label": "Field",
+                "id": field_id,
+                "properties": {
+                    "name": name,
+                    "start_line": start_line,
+                    "end_line": end_line,
+                    "is_exported": is_exported,
+                    "visibility": visibility,
+                    "type_annotation": type_annotation,
+                    "parent_class": parent_class_id,
+                },
+            })
+            added_ids[f"Field:{name}:{start_line}"] = field_id
+            relationships.append(_rel("CONTAINS", parent_class_id, field_id))
+            relationships.append(_rel("DEFINES", file_id, field_id))
             return
 
         # Function declarations (standalone, not methods)
@@ -207,10 +240,6 @@ def extract_graph_entities(tree: Tree, source_bytes: bytes, file_path: str,
 
             if is_exported:
                 relationships.append(_rel("EXPORTS", file_id, func_id))
-
-            for callee in _get_call_sites(n):
-                callee_id = _node_id(file_path, "Function", callee, 1)
-                relationships.append(_rel("CALLS", func_id, callee_id))
 
             for child in n.children:
                 _walk(child, parent_class_id=parent_class_id)
@@ -590,4 +619,18 @@ def extract_graph_entities(tree: Tree, source_bytes: bytes, file_path: str,
             type_id = _node_id(file_path, "Interface", type_name, 1)
             relationships.append(_rel("TYPE_OF", var_id, type_id))
 
-    return {"nodes": nodes, "relationships": relationships}
+    deduped_relationships = []
+    seen_relationships = set()
+    for rel in relationships:
+        key = (
+            rel.get("type"),
+            rel.get("source_id"),
+            rel.get("target_id"),
+            repr(sorted((rel.get("properties") or {}).items())),
+        )
+        if key in seen_relationships:
+            continue
+        seen_relationships.add(key)
+        deduped_relationships.append(rel)
+
+    return {"nodes": nodes, "relationships": deduped_relationships}

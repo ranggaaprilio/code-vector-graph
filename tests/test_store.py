@@ -192,6 +192,8 @@ class TestMetadataPayload:
             "function_name",
             "total_chunks",
             "text_content",
+            "graph_nodes",
+            "graph_relationships",
         ]
 
         for field in required_fields:
@@ -213,6 +215,44 @@ class TestMetadataPayload:
         assert payload["function_name"] == "testFunc"
         assert payload["total_chunks"] == 2
         assert payload["text_content"] == "function testFunc() { return 1; }"
+        assert payload["graph_nodes"] == []
+        assert payload["graph_relationships"] == []
+
+    def test_glossary_payload_values(self, in_memory_store):
+        in_memory_store.create_collection()
+        chunks = [
+            {
+                "id": "11111111-1111-5111-8111-111111111111",
+                "file_path": "/test/file1.js",
+                "chunk_index": 0,
+                "embedding": [0.1] * 768,
+                "language": "javascript",
+                "start_line": 0,
+                "end_line": 0,
+                "function_name": None,
+                "total_chunks": 1,
+                "node_type": "glossary_entry",
+                "text_content": "userId (variable): User identifier.",
+                "term": "userId",
+                "kind": "variable",
+                "summary": "User identifier.",
+                "source": "manual",
+                "confidence": 1.0,
+                "symbol_id": "symbol-1",
+            }
+        ]
+
+        ids = in_memory_store.upsert_chunks(chunks)
+        point = in_memory_store.get_point(ids[0])
+        payload = point["payload"]
+
+        assert ids == ["11111111-1111-5111-8111-111111111111"]
+        assert payload["node_type"] == "glossary_entry"
+        assert payload["term"] == "userId"
+        assert payload["kind"] == "variable"
+        assert payload["summary"] == "User identifier."
+        assert payload["source"] == "manual"
+        assert payload["symbol_id"] == "symbol-1"
 
     def test_null_function_name(self, in_memory_store, sample_chunks):
         """Test that null function_name is preserved."""

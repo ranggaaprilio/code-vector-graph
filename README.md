@@ -7,7 +7,8 @@ A Python CLI tool that transforms JavaScript/TypeScript code repositories into a
 - **Language-Aware Parsing**: Tree-sitter parses JS/TS/TSX files, strips comments, and extracts rich AST metadata (functions, classes, imports, call sites, decorators, visibility)
 - **Smart Chunking**: Token-aware sliding window chunking using BERT tokenizer with line-boundary respect
 - **Local Embeddings**: HuggingFace `nomic-ai/nomic-embed-code` model (3584-dim) for code-specific embeddings
-- **Code Ontology Graph**: Neo4j stores a rich schema of Files, Classes, Functions, Methods, Variables, Imports, Interfaces, TypeAliases, and their relationships (CALLS, IMPORTS, INHERITS, CONTAINS, etc.)
+- **Code Ontology Graph**: Neo4j stores a rich schema of Files, Classes, Functions, Methods, Fields, Variables, Imports, Interfaces, TypeAliases, Chunks, glossary entries, and their relationships (CALLS, IMPORTS, HAS_GLOSSARY, CONTAINS, etc.)
+- **Glossary Enrichment**: Manual `glossary.yml` entries and nearby comments/JSDoc become structured `GlossaryEntry` nodes in Neo4j and searchable glossary records in Qdrant
 - **Hybrid Retrieval**: Combines vector similarity and graph traversal using Reciprocal Rank Fusion (RRF) for superior search quality
 - **MCP Server**: Expose `search_code` and `check_health` tools to any MCP-compatible AI client (Claude Desktop, OpenCode, etc.)
 - **Query CLI**: Standalone query tool with code-specific query expansion and OpenAI-powered RAG answers
@@ -113,8 +114,9 @@ This downloads `nomic-ai/nomic-embed-code` (~440MB) to `~/.cache/huggingface/`. 
 3. **Chunk**: Create overlapping chunks using BERT tokenizer (400 tokens, 64 overlap, line-based)
 4. **Embed**: Generate 3584-dim embeddings using HuggingFace `nomic-ai/nomic-embed-code`
 5. **Store**: Upsert chunks into Qdrant with full metadata
-6. **Graph Extract**: Extract code ontology entities (Files, Classes, Functions, Methods, Variables, Imports, Interfaces, TypeAliases) and relationships (CALLS, IMPORTS, INHERITS, CONTAINS, REFERENCES, etc.)
-7. **Graph Store**: Upsert nodes and relationships into Neo4j
+6. **Graph Extract**: Extract code ontology entities (Files, Classes, Functions, Methods, Fields, Variables, Imports, Interfaces, TypeAliases) and relationships (CALLS, IMPORTS, INHERITS, CONTAINS, REFERENCES, etc.)
+7. **Glossary Enrich**: Attach manual glossary entries and nearby comments/JSDoc to matching symbols with `HAS_GLOSSARY`
+8. **Graph Store**: Upsert nodes and relationships into Neo4j
 
 ## Usage
 
@@ -146,6 +148,41 @@ python main.py --repo-path /path/to/your/repo --no-graph
 python main.py --repo-path /path/to/your/repo --verbose
 ```
 
+### Glossary Enrichment
+
+By default, the pipeline looks for `glossary.yml` in the repository root. Missing glossary files are ignored.
+
+```bash
+python main.py --repo-path /path/to/your/repo --glossary-file glossary.yml
+```
+
+Example `glossary.yml`:
+
+```yaml
+entries:
+  - term: userId
+    kind: variable
+    file_path: src/auth/session.ts
+    summary: Unique identifier for the authenticated user.
+    source: manual
+
+  - term: SessionManager
+    kind: class
+    file_path: src/auth/session.ts
+    summary: Coordinates session lifecycle and token refresh behavior.
+```
+
+Supported `kind` values match graph symbols: `class`, `function`, `method`, `field`, `variable`, `interface`, and `type_alias`.
+
+Manual entries take precedence over comments/JSDoc for the same `file_path + kind + term`. Comments immediately above a symbol are also extracted automatically:
+
+```ts
+/** Unique identifier for the authenticated user. */
+const userId = session.user.id;
+```
+
+Glossary entries are stored as `GlossaryEntry` nodes in Neo4j, linked to symbols with `HAS_GLOSSARY`, and also indexed in Qdrant as `node_type="glossary_entry"` records for semantic search.
+
 ### Custom Configuration
 
 ```bash
@@ -170,6 +207,7 @@ python main.py \
 | `--chunk-size` | `400` | Tokens per chunk |
 | `--chunk-overlap` | `64` | Token overlap between chunks |
 | `--batch-size` | `64` | Embedding batch size |
+| `--glossary-file` | `glossary.yml` | Manual glossary YAML file path |
 | `--no-graph` | `false` | Skip Neo4j graph ingestion |
 | `--neo4j-uri` | `bolt://localhost:7687` | Neo4j bolt URI |
 | `--neo4j-user` | `neo4j` | Neo4j username |
@@ -267,11 +305,13 @@ The project includes `.mcp.json` — OpenCode picks this up automatically.
 | `Class` | Class declaration | name, start_line, end_line, is_exported, visibility, decorators, parent_class |
 | `Function` | Function declaration | name, start_line, end_line, is_async, parameters, call_sites, decorators |
 | `Method` | Class method | name, parent_class, is_async, parameters, call_sites |
+| `Field` | Class field/property | name, parent_class, type_annotation, visibility |
 | `Variable` | Variable declaration | name, is_constant, type_annotation, visibility |
 | `Import` | Import statement | module, names, is_wildcard |
 | `Interface` | TypeScript interface | name, extends |
 | `TypeAlias` | TypeScript type alias | name, type_expression |
 | `Chunk` | Code chunk (linked to Qdrant) | qdrant_id, file_path, start_line, end_line, token_count |
+| `GlossaryEntry` | Manual or comment-derived term explanation | term, kind, summary, source, confidence, symbol_id |
 
 ### Relationship Types
 
@@ -286,6 +326,7 @@ The project includes `.mcp.json` — OpenCode picks this up automatically.
 | `DEFINES` | Module defines a symbol |
 | `TYPE_OF` | Type relationship |
 | `DEPENDS_ON` | Module dependency |
+| `HAS_GLOSSARY` | Symbol has a glossary explanation |
 
 ## Project Structure
 
@@ -307,6 +348,7 @@ The project includes `.mcp.json` — OpenCode picks this up automatically.
 │   ├── chunker.py             # Token-aware sliding window chunking
 │   ├── embedder.py            # HuggingFace embedding (nomic-ai/nomic-embed-code)
 │   ├── store.py               # Qdrant vector store
+│   ├── glossary.py            # Manual/comment glossary extraction and graph enrichment
 │   ├── graph_schema.py        # Neo4j node/relationship schema definitions
 │   ├── graph_extractor.py     # AST-to-graph entity extraction
 │   ├── graph_store.py         # Neo4j CRUD operations
