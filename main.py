@@ -13,11 +13,10 @@ load_dotenv()
 from src.chunker import chunk_text
 from src.cli import parse_args, setup_logging
 from src.config import (
-    EMBEDDING_PROVIDERS,
     NEO4J_PASSWORD,
     NEO4J_URI,
     NEO4J_USER,
-    TOKENIZER_NAME,
+    get_model_config,
 )
 from src.embedder import create_embedder
 from src.glossary import (
@@ -119,8 +118,10 @@ def run_pipeline(args) -> dict:
         logger.warning("No files found to process")
         return stats
 
-    dimensions = EMBEDDING_PROVIDERS["huggingface"]["dimensions"]
-    collection_name = get_collection_name(args.collection_name, "huggingface")
+    model_config = get_model_config(args.model)
+    dimensions = model_config["dimensions"]
+    collection_name = get_collection_name(args.collection_name, "huggingface", model=model_config["model_name"])
+    tokenizer_name = model_config["tokenizer_name"]
 
     # Step 2: Initialize components (skip in dry-run mode to save memory)
     embedder = None
@@ -129,7 +130,7 @@ def run_pipeline(args) -> dict:
     manual_glossary_entries = []
 
     if not args.dry_run:
-        embedder = create_embedder()
+        embedder = create_embedder(model_id=args.model)
         store = VectorStore(
             collection_name=collection_name,
             qdrant_url=args.qdrant_url,
@@ -239,8 +240,6 @@ def run_pipeline(args) -> dict:
             # Free large objects immediately after metadata extraction
             parsed.pop("source_bytes", None)
             parsed.pop("tree", None)
-
-            tokenizer_name = TOKENIZER_NAME
 
             # Chunk the parsed text, wiring in AST metadata to chunks
             chunks = chunk_text(

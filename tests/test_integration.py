@@ -15,11 +15,15 @@ from src.config import (
     DEFAULT_CHUNK_SIZE,
     DEFAULT_COLLECTION_NAME,
     DEFAULT_QDRANT_URL,
+    MODEL_CONFIGS,
+    DEFAULT_MODEL_ID,
 )
 from main import check_qdrant_health, main, run_pipeline
 from src.parser import parse_file
 from src.scanner import discover_files
 from src.store import VectorStore
+
+TEST_DIMENSIONS = MODEL_CONFIGS[DEFAULT_MODEL_ID]["dimensions"]
 
 
 @pytest.fixture
@@ -76,6 +80,7 @@ def mock_args(test_repo):
     args.batch_size = 64
     args.dry_run = False
     args.verbose = False
+    args.model = DEFAULT_MODEL_ID
     return args
 
 
@@ -270,7 +275,7 @@ class TestChunkStorage:
             {
                 "file_path": f"{test_repo}/test.js",
                 "chunk_index": 0,
-                "embedding": [0.1] * 1536,
+                "embedding": [0.1] * TEST_DIMENSIONS,
                 "language": "javascript",
                 "start_line": 1,
                 "end_line": 5,
@@ -281,7 +286,7 @@ class TestChunkStorage:
             {
                 "file_path": f"{test_repo}/test.js",
                 "chunk_index": 1,
-                "embedding": [0.2] * 1536,
+                "embedding": [0.2] * TEST_DIMENSIONS,
                 "language": "javascript",
                 "start_line": 7,
                 "end_line": 9,

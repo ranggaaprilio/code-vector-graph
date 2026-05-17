@@ -12,8 +12,9 @@ load_dotenv()
 from src.cli import setup_logging
 from src.config import (
     DEFAULT_COLLECTION_NAME,
+    DEFAULT_MODEL_ID,
     DEFAULT_QDRANT_URL,
-    EMBEDDING_PROVIDERS,
+    get_model_config,
     NEO4J_PASSWORD,
     NEO4J_URI,
     NEO4J_USER,
@@ -196,7 +197,7 @@ def main() -> int:
         )
         return 1
 
-    embedder = create_embedder()
+    embedder = create_embedder(model_id=DEFAULT_MODEL_ID)
 
     if not embedder.check_health():
         logger.error("Embedder health check failed")
@@ -212,8 +213,9 @@ def main() -> int:
     query_vector = embedder.embed_query(query_text)
     logger.info(f"Query vector: {query_vector}")
 
-    dimensions = EMBEDDING_PROVIDERS["huggingface"]["dimensions"]
-    collection_name = get_collection_name(args.collection_name, "huggingface")
+    model_config = get_model_config(DEFAULT_MODEL_ID)
+    dimensions = model_config["dimensions"]
+    collection_name = get_collection_name(args.collection_name, "huggingface", model=model_config["model_name"])
     store = VectorStore(
         collection_name=collection_name,
         qdrant_url=args.qdrant_url,

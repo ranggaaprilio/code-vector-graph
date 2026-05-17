@@ -12,6 +12,7 @@ from src.config import (
     DEFAULT_QDRANT_URL,
     EMBEDDING_DIMENSIONS,
     EMBEDDING_PROVIDERS,
+    MODEL_CONFIGS,
 )
 
 logger = logging.getLogger(__name__)
@@ -23,12 +24,17 @@ def get_collection_name(base_name: str, provider: str, model: str | None = None)
     Format: {base_name}_{model_suffix}_{dimensions}
 
     Examples:
-        - huggingface + jina-code-embeddings-1.5b → code_chunks_jina-code-embeddings-1.5b_1536
+        - huggingface + nomic-embed-code → code_chunks_nomic-embed-code_3584
         - huggingface + jina-code-embeddings-1.5b → code_chunks_jina-code-embeddings-1.5b_1536
     """
     provider_config = EMBEDDING_PROVIDERS[provider]
     model_name = model or provider_config["model"]
+
     dimensions = provider_config["dimensions"]
+    for cfg in MODEL_CONFIGS.values():
+        if cfg["model_name"] == model_name:
+            dimensions = cfg["dimensions"]
+            break
 
     # Clean model name (remove special chars, take last part if has /)
     if "/" in model_name:
