@@ -1,40 +1,33 @@
 {
-  "active_plan": "/Users/ranggaaprilioutama/Repository/poc/code-vector-graph/.sisyphus/plans/hybrid-rag-neo4j.md",
-  "started_at": "2026-05-06T07:23:00Z",
+  "active_plan": "/mnt/67d4d7f3-61de-432a-b22a-136ed1cf1c9b/Code/Python/codeVectorGraph/.sisyphus/plans/model-migration.md",
+  "started_at": "2026-05-09T15:58:01.662Z",
   "session_ids": [
-    "ses_203f34663ffeC8Q7ftzF45rsAv"
+    "ses_1f28a3e6fffeWE4wPyokrUqPcX",
+    "ses_1f27a4cfbffep4ypiEQQ2PaDXJ"
   ],
-  "plan_name": "hybrid-rag-neo4j",
-  "worktree_path": null,
   "session_origins": {
-    "ses_203f34663ffeC8Q7ftzF45rsAv": "direct"
+    "ses_1f28a3e6fffeWE4wPyokrUqPcX": "direct"
   },
+  "plan_name": "model-migration",
+  "agent": "atlas",
   "task_sessions": {
-    "todo:1": {
-      "task_key": "todo:1",
-      "task_label": "1",
-      "task_title": "Neo4j Docker Compose + Config",
-      "session_id": "ses_203d351abffefgRPQwMbkzKoKo",
+    "todo:7": {
+      "task_key": "todo:7",
+      "task_label": "7",
+      "task_title": "Update test_config.py",
+      "session_id": "ses_1f287d5f4ffeU6o5z403QjWXFt",
       "agent": "Sisyphus-Junior",
       "category": "quick",
-      "updated_at": "2026-05-06T07:26:13.774Z"
-    },
-    "todo:2": {
-      "task_key": "todo:2",
-      "task_label": "2",
-      "task_title": "Code Ontology Schema Definition",
-      "session_id": "ses_2039c804dffeVG5DUHv5yPDvTJ",
-      "agent": "Sisyphus-Junior",
-      "category": "unspecified-high",
-      "updated_at": "2026-05-06T08:27:56.872Z"
+      "updated_at": "2026-05-09T16:03:21.892Z"
     },
     "final-wave:f1": {
       "task_key": "final-wave:f1",
       "task_label": "F1",
       "task_title": "**Plan Compliance Audit** — `oracle`",
-      "session_id": "ses_2038c8324ffeiwk2EM0wIn29ld",
-      "agent": "oracle",
-      "updated_at": "2026-05-06T09:08:03.533Z"
+      "session_id": "ses_1f27935fbffegabLe1hcRP5sgV",
+      "agent": "Sisyphus-Junior",
+      "category": "deep",
+      "updated_at": "2026-05-09T16:18:55.782Z"
     }
   }
 }

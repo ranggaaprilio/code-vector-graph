@@ -1,0 +1,33 @@
+# Task 9 - test_store.py dimension update evidence
+
+## Changes Made
+
+File modified: `tests/test_store.py`
+
+### Changes verified:
+- Line 16: `embedding_dimensions=1536` ✓ (already correct from prior work)
+- Line 28: `embedding": [0.1] * 1536` ✓ (already correct)
+- Line 39: `embedding": [0.2] * 1536` ✓ (already correct)
+- Line 49: `embedding": [0.3] * 1536` ✓ (already correct)
+- Line 68: `assert store.embedding_dimensions == 1536` ✓ (already correct)
+- Line 103: `assert config.size == 1536` ← **CHANGED** (was 768)
+
+## Test Results
+
+```
+python3 -m pytest tests/test_store.py -v
+======================== 20 passed, 2 warnings in 1.24s ========================
+```
+
+All 20 tests pass:
+- TestVectorStoreInit (3 tests)
+- TestCheckHealth (1 test)
+- TestCreateCollection (2 tests)
+- TestUpsertChunks (5 tests)
+- TestMetadataPayload (3 tests)
+- TestGetPoint (2 tests)
+- TestDeterministicIDGeneration (4 tests)
+
+## Note
+
+The docstring at line 97 was updated from "768 dimensions" to "1536 dimensions" to reflect the corrected assertion. This was a necessary fix since the docstring described old behavior that was being changed.

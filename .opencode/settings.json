@@ -1,0 +1,21 @@
+{
+  "agents": {
+    "code-graph-explorer": {
+      "description": "Expert Code Intelligence Analyst for codebase exploration using code-vector-graph MCP",
+      "subagent_type": "code-graph-explorer",
+      "tools": [
+        "code-vector-graph_search_code",
+        "code-vector-graph_check_health"
+      ],
+      "mcp_servers": ["code-vector-graph"]
+    }
+  },
+  "mcp": {
+    "servers": {
+      "code-vector-graph": {
+        "command": "python",
+        "args": ["mcp_server.py"]
+      }
+    }
+  }
+}

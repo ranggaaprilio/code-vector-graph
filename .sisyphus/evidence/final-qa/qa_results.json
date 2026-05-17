@@ -1,0 +1,140 @@
+{
+  "timestamp": "2026-05-09T23:09:26.182549",
+  "results": {
+    "Scenario 1: Config Values": [
+      true,
+      [
+        [
+          "DEFAULT_MODEL",
+          true,
+          "Value: jinaai/jina-code-embeddings-1.5b"
+        ],
+        [
+          "EMBEDDING_DIMENSIONS",
+          true,
+          "Value: 1536"
+        ],
+        [
+          "TOKENIZER_NAME",
+          true,
+          "Value: jinaai/jina-code-embeddings-1.5b"
+        ],
+        [
+          "EMBEDDING_PROVIDERS",
+          true,
+          "Structure correct"
+        ],
+        [
+          "DEFAULT_PROVIDER",
+          true,
+          "Value: huggingface"
+        ]
+      ]
+    ],
+    "Scenario 2: Embedder Prefixes": [
+      true,
+      [
+        [
+          "JINA_TASK_PREFIXES structure",
+          true,
+          "Has code2code and nl2code keys"
+        ],
+        [
+          "code2code.passage",
+          true,
+          "Value: Candidate code snippet:\n"
+        ],
+        [
+          "nl2code.query",
+          true,
+          "Value: Find the most relevant code snippet given the following query:\n"
+        ],
+        [
+          "code2code.query",
+          true,
+          "Value: Find an equivalent code snippet given the following code snippet:\n"
+        ],
+        [
+          "nl2code.passage",
+          true,
+          "Value: Candidate code snippet:\n"
+        ]
+      ]
+    ],
+    "Scenario 3: Chunker Tokenizer": [
+      true,
+      [
+        [
+          "chunker import",
+          true,
+          "load_tokenizer and chunk_text available"
+        ],
+        [
+          "TOKENIZER_NAME import",
+          true,
+          "Imported from src.config"
+        ],
+        [
+          "docstring reference",
+          true,
+          "jina model mentioned"
+        ],
+        [
+          "TOKENIZER_NAME usage",
+          true,
+          "Used in chunker"
+        ]
+      ]
+    ],
+    "Scenario 4: Edge Cases": [
+      true,
+      [
+        [
+          "Empty chunks handling",
+          true,
+          "Has guard clause"
+        ],
+        [
+          "embed_chunks signature",
+          true,
+          "(self, chunks: list[dict], batch_size: int = 64) -> list[dict]"
+        ],
+        [
+          "code2code.passage usage",
+          true,
+          "Prefix applied in embed_chunks"
+        ],
+        [
+          "nl2code.query usage",
+          true,
+          "Prefix applied in embed_query"
+        ]
+      ]
+    ],
+    "Scenario 5: Integration": [
+      true,
+      [
+        [
+          "Embedder import",
+          true,
+          "HuggingFaceEmbedder and JINA_TASK_PREFIXES available"
+        ],
+        [
+          "Config import",
+          true,
+          "All constants available"
+        ],
+        [
+          "Chunker import",
+          true,
+          "chunk_text and load_tokenizer available"
+        ],
+        [
+          "Cross-module consistency",
+          true,
+          "Checks: 2/2"
+        ]
+      ]
+    ]
+  }
+}

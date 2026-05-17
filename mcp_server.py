@@ -8,8 +8,9 @@ from mcp.server.fastmcp import FastMCP
 
 from src.config import (
     DEFAULT_COLLECTION_NAME,
+    DEFAULT_MODEL_ID,
     DEFAULT_QDRANT_URL,
-    EMBEDDING_PROVIDERS,
+    get_model_config,
     NEO4J_PASSWORD,
     NEO4J_URI,
     NEO4J_USER,
@@ -33,15 +34,16 @@ _graph_store = None
 def _get_embedder():
     global _embedder
     if _embedder is None:
-        _embedder = create_embedder()
+        _embedder = create_embedder(model_id=DEFAULT_MODEL_ID)
     return _embedder
 
 
 def _get_store():
     global _store
     if _store is None:
-        dimensions = EMBEDDING_PROVIDERS["huggingface"]["dimensions"]
-        collection_name = get_collection_name(DEFAULT_COLLECTION_NAME, "huggingface")
+        model_config = get_model_config(DEFAULT_MODEL_ID)
+        dimensions = model_config["dimensions"]
+        collection_name = get_collection_name(DEFAULT_COLLECTION_NAME, "huggingface", model=model_config["model_name"])
         _store = VectorStore(
             collection_name=collection_name,
             qdrant_url=DEFAULT_QDRANT_URL,

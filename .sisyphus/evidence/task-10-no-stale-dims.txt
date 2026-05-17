@@ -1,0 +1,6 @@
+Task 10 - No stale 3584 dims
+
+grep '3584' tests/test_integration.py: No matches found
+grep '1536' tests/test_integration.py:
+270:                "embedding": [0.1] * 1536,
+281:                "embedding": [0.2] * 1536,

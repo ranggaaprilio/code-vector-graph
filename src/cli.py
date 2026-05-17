@@ -9,9 +9,9 @@ from src.config import (
     DEFAULT_CHUNK_OVERLAP,
     DEFAULT_CHUNK_SIZE,
     DEFAULT_COLLECTION_NAME,
-    DEFAULT_MODEL,
+    DEFAULT_MODEL_ID,
     DEFAULT_QDRANT_URL,
-    EMBEDDING_PROVIDERS,
+    MODEL_CONFIGS,
     NEO4J_URI,
     NEO4J_USER,
     NEO4J_PASSWORD,
@@ -107,6 +107,14 @@ Examples:
         type=str,
         default=NEO4J_PASSWORD,
         help=f"Neo4j password (default: {NEO4J_PASSWORD})",
+    )
+
+    parser.add_argument(
+        "--model",
+        type=str,
+        default=DEFAULT_MODEL_ID,
+        choices=list(MODEL_CONFIGS.keys()),
+        help=f"Embedding model to use (default: {DEFAULT_MODEL_ID}). Options: {', '.join(MODEL_CONFIGS.keys())}",
     )
 
     parser.add_argument(

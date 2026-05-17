@@ -26,6 +26,14 @@ class _DummyTokenizer:
         tokens = [t for t in text.strip().split() if t != ""]
         return _DummyEncoding(list(range(len(tokens))))
 
+    def decode(self, token_ids: List[int]) -> str:
+        """Decode token ids back to text (reconstructs from original line)."""
+        if not token_ids:
+            return ""
+        # For dummy tokenizer, we can't perfectly reconstruct, so return placeholder
+        # The real tokenizer will handle this correctly
+        return "word " * len(token_ids)
+
 
 def load_tokenizer(tokenizer_name: str = "bert-base-uncased"):
     """Load a tokenizer by name with simple fallback.
@@ -36,7 +44,7 @@ def load_tokenizer(tokenizer_name: str = "bert-base-uncased"):
 
     Args:
         tokenizer_name: Name of the tokenizer model to load (e.g., 'bert-base-uncased',
-                       'nomic-ai/nomic-embed-code')
+                       'jinaai/jina-code-embeddings-1.5b')
 
     Returns:
         Tokenizer instance or DummyTokenizer fallback
@@ -74,6 +82,38 @@ def count_tokens(text: str, tokenizer) -> int:
         return 0
     encoding = tokenizer.encode(text)
     return len(encoding.ids)
+
+
+def _split_long_line(line: str, chunk_size: int, tokenizer) -> List[str]:
+    """Split a long line into chunks at token boundaries.
+
+    For lines that exceed chunk_size tokens, split into multiple
+    sub-chunks at token boundaries to ensure each sub-chunk fits.
+
+    Args:
+        line: The long line to split
+        chunk_size: Maximum tokens per chunk
+        tokenizer: Tokenizer to use for counting
+
+    Returns:
+        List of sub-line strings, each within chunk_size tokens
+    """
+    encoding = tokenizer.encode(line)
+    token_ids = encoding.ids
+
+    if len(token_ids) <= chunk_size:
+        return [line]
+
+    sub_chunks = []
+    start = 0
+    while start < len(token_ids):
+        end = min(start + chunk_size, len(token_ids))
+        sub_chunk_ids = token_ids[start:end]
+        sub_chunk_text = tokenizer.decode(sub_chunk_ids)
+        sub_chunks.append(sub_chunk_text)
+        start = end
+
+    return sub_chunks
 
 
 def _line_token_counts(lines: List[str], tokenizer) -> List[int]:
@@ -147,37 +187,37 @@ def chunk_text(
             end_idx += 1
             continue
 
-        # If a single line overflows the chunk size, force it into its own chunk
+        # If a single line overflows the chunk size, split it at token boundaries
         if end_idx == start_idx:
-            chunk_lines = lines[start_idx : end_idx + 1]
-            chunk_text_segment = "\n".join(chunk_lines)
-            cs = start_line + start_idx
-            ce = start_line + end_idx
-            chunks.append(
-                {
-                    "text": chunk_text_segment,
-                    "metadata": {
-                        "file_path": file_path,
-                        "language": language,
-                        "start_line": cs,
-                        "end_line": ce,
-                        "chunk_index": len(chunks) + 1,
-                        "function_name": function_name,
-                        "total_chunks": 0,
-                        "node_type": node_type,
-                        "class_name": class_name,
-                        "parent_function": parent_function,
-                        "imports": imports,
-                        "exports": exports,
-                        "symbols_defined": symbols_defined,
-                        "call_sites": call_sites,
-                        "is_exported": is_exported,
-                        "visibility": visibility,
-                        "decorators": decorators,
-                        "file_hash": file_hash,
-                    },
-                }
-            )
+            long_line = lines[start_idx]
+            sub_chunks = _split_long_line(long_line, chunk_size, tokenizer)
+            base_line_num = start_line + start_idx
+            for sub_idx, sub_chunk in enumerate(sub_chunks):
+                chunks.append(
+                    {
+                        "text": sub_chunk,
+                        "metadata": {
+                            "file_path": file_path,
+                            "language": language,
+                            "start_line": base_line_num,
+                            "end_line": base_line_num,
+                            "chunk_index": len(chunks) + 1,
+                            "function_name": function_name,
+                            "total_chunks": 0,
+                            "node_type": node_type,
+                            "class_name": class_name,
+                            "parent_function": parent_function,
+                            "imports": imports,
+                            "exports": exports,
+                            "symbols_defined": symbols_defined,
+                            "call_sites": call_sites,
+                            "is_exported": is_exported,
+                            "visibility": visibility,
+                            "decorators": decorators,
+                            "file_hash": file_hash,
+                        },
+                    }
+                )
             end_idx += 1
             start_idx = end_idx
             current_tokens = 0

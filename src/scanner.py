@@ -6,7 +6,7 @@ from pathlib import Path
 
 from src.config import SUPPORTED_EXTENSIONS
 
-SKIP_DIRS = {"node_modules", ".git", "dist", "build", "__pycache__", ".venv"}
+SKIP_DIRS = {"node_modules", ".git", "dist", "build", "__pycache__", ".venv", ".next"}
 
 
 def is_binary(file_path: Path) -> bool:
@@ -76,13 +76,15 @@ def discover_files(repo_path: str) -> list[dict]:
 
             info = SUPPORTED_EXTENSIONS[ext]
             file_hash = compute_file_hash(file_path)
-            results.append({
-                "path": str(file_path),
-                "extension": ext,
-                "language": info["language"],
-                "grammar": info["grammar"],
-                "file_hash": file_hash,
-            })
+            results.append(
+                {
+                    "path": str(file_path),
+                    "extension": ext,
+                    "language": info["language"],
+                    "grammar": info["grammar"],
+                    "file_hash": file_hash,
+                }
+            )
 
     # Sort by file path for consistent ordering
     results.sort(key=lambda x: x["path"])

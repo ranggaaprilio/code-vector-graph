@@ -6,7 +6,6 @@ import sys
 from pathlib import Path
 
 import torch
-
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -14,21 +13,20 @@ load_dotenv()
 from src.chunker import chunk_text
 from src.cli import parse_args, setup_logging
 from src.config import (
-    EMBEDDING_PROVIDERS,
-    TOKENIZER_NAME,
+    NEO4J_PASSWORD,
     NEO4J_URI,
     NEO4J_USER,
-    NEO4J_PASSWORD,
+    get_model_config,
 )
 from src.embedder import create_embedder
-from src.graph_extractor import extract_graph_entities
-from src.graph_store import GraphStore
 from src.glossary import (
     build_glossary_graph,
     extract_comment_glossary,
     load_manual_glossary,
 )
-from src.parser import parse_file, extract_ast_metadata
+from src.graph_extractor import extract_graph_entities
+from src.graph_store import GraphStore
+from src.parser import extract_ast_metadata, parse_file
 from src.scanner import discover_files
 from src.store import VectorStore, get_collection_name
 
@@ -75,7 +73,10 @@ def check_qdrant_health(store: VectorStore) -> bool:
         )
         print(f"  URL: {store.client}", file=sys.stderr)
         print("\nPlease ensure:", file=sys.stderr)
-        print("  1. Qdrant is running (docker run -p 6333:6333 qdrant/qdrant)", file=sys.stderr)
+        print(
+            "  1. Qdrant is running (docker run -p 6333:6333 qdrant/qdrant)",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     logger.info("Qdrant health check passed")
@@ -117,8 +118,10 @@ def run_pipeline(args) -> dict:
         logger.warning("No files found to process")
         return stats
 
-    dimensions = EMBEDDING_PROVIDERS["huggingface"]["dimensions"]
-    collection_name = get_collection_name(args.collection_name, "huggingface")
+    model_config = get_model_config(args.model)
+    dimensions = model_config["dimensions"]
+    collection_name = get_collection_name(args.collection_name, "huggingface", model=model_config["model_name"])
+    tokenizer_name = model_config["tokenizer_name"]
 
     # Step 2: Initialize components (skip in dry-run mode to save memory)
     embedder = None
@@ -127,7 +130,7 @@ def run_pipeline(args) -> dict:
     manual_glossary_entries = []
 
     if not args.dry_run:
-        embedder = create_embedder()
+        embedder = create_embedder(model_id=args.model)
         store = VectorStore(
             collection_name=collection_name,
             qdrant_url=args.qdrant_url,
@@ -174,7 +177,9 @@ def run_pipeline(args) -> dict:
         batch_end = min(batch_start + FILE_BATCH_SIZE, total_files)
         file_batch = files[batch_start:batch_end]
 
-        logger.info(f"Processing file batch {batch_start // FILE_BATCH_SIZE + 1}/{(total_files + FILE_BATCH_SIZE - 1) // FILE_BATCH_SIZE} ({batch_start + 1}-{batch_end}/{total_files})")
+        logger.info(
+            f"Processing file batch {batch_start // FILE_BATCH_SIZE + 1}/{(total_files + FILE_BATCH_SIZE - 1) // FILE_BATCH_SIZE} ({batch_start + 1}-{batch_end}/{total_files})"
+        )
 
         # Accumulate chunks for this batch only
         batch_chunks = []
@@ -187,7 +192,7 @@ def run_pipeline(args) -> dict:
             language = file_info["language"]
             file_hash = file_info.get("file_hash", "")
 
-            logger.debug(f"Processing file: {file_path}")
+            logger.info(f"[1/4] Parsing file: {file_path}")
 
             # Parse file
             parsed = parse_file(file_path, grammar)
@@ -196,10 +201,13 @@ def run_pipeline(args) -> dict:
                 stats["files_failed"] += 1
                 continue
 
+            logger.info(f"[1/4] Parsing complete: {file_path}")
             stats["files_parsed"] += 1
 
             # Extract AST metadata (if parsing succeeded)
-            ast_metadata = extract_ast_metadata(parsed.get("tree"), parsed.get("source_bytes"))
+            ast_metadata = extract_ast_metadata(
+                parsed.get("tree"), parsed.get("source_bytes")
+            )
             graph_data = None
             if store is not None:
                 graph_data = extract_graph_entities(
@@ -232,8 +240,6 @@ def run_pipeline(args) -> dict:
             # Free large objects immediately after metadata extraction
             parsed.pop("source_bytes", None)
             parsed.pop("tree", None)
-
-            tokenizer_name = TOKENIZER_NAME
 
             # Chunk the parsed text, wiring in AST metadata to chunks
             chunks = chunk_text(
@@ -313,13 +319,15 @@ def run_pipeline(args) -> dict:
             batch_code_chunks_created += len(chunks)
             batch_chunks.extend(chunks)
             batch_chunks.extend(glossary_chunks)
-            
+
             # Free parsed dict to release stripped_text memory
             parsed.clear()
             logger.debug(f"Created {len(chunks)} chunks from {file_path}")
 
         total_chunks_created += batch_code_chunks_created
-        logger.info(f"Created {batch_code_chunks_created} code chunks from this batch (total: {total_chunks_created})")
+        logger.info(
+            f"Created {batch_code_chunks_created} code chunks from this batch (total: {total_chunks_created})"
+        )
 
         # Step 4: Skip embedding/storage in dry-run mode
         if args.dry_run:
@@ -332,19 +340,29 @@ def run_pipeline(args) -> dict:
 
         # Stream embeddings to Qdrant in sub-batches to cap memory usage
         if batch_chunks:
-            total_sub_batches = (len(batch_chunks) + args.batch_size - 1) // args.batch_size
-            logger.info(f"Streaming {len(batch_chunks)} chunks through {total_sub_batches} embedding sub-batches...")
+            total_sub_batches = (
+                len(batch_chunks) + args.batch_size - 1
+            ) // args.batch_size
+            logger.info(
+                f"Streaming {len(batch_chunks)} chunks through {total_sub_batches} embedding sub-batches..."
+            )
             for sub_idx in range(total_sub_batches):
                 sub_start = sub_idx * args.batch_size
                 sub_end = min(sub_start + args.batch_size, len(batch_chunks))
                 sub_batch = batch_chunks[sub_start:sub_end]
 
-                logger.info(f"Embedding sub-batch {sub_idx + 1}/{total_sub_batches} ({len(sub_batch)} chunks)...")
-                embedded_sub = embedder.embed_chunks(sub_batch, batch_size=args.batch_size)
+                logger.info(
+                    f"Embedding sub-batch {sub_idx + 1}/{total_sub_batches} ({len(sub_batch)} chunks)..."
+                )
+                embedded_sub = embedder.embed_chunks(
+                    sub_batch, batch_size=args.batch_size
+                )
                 stats["chunks_embedded"] += len(embedded_sub)
 
                 if embedded_sub:
-                    logger.info(f"Storing sub-batch {sub_idx + 1}/{total_sub_batches} in Qdrant...")
+                    logger.info(
+                        f"Storing sub-batch {sub_idx + 1}/{total_sub_batches} in Qdrant..."
+                    )
                     point_ids = store.upsert_chunks(embedded_sub)
                     stats["chunks_stored"] += len(point_ids)
                     logger.info(f"Successfully stored {len(point_ids)} chunks")
@@ -354,10 +372,14 @@ def run_pipeline(args) -> dict:
                 gc.collect()
                 if torch.backends.mps.is_available():
                     torch.mps.empty_cache()
-                logger.info(f"Freed memory after sub-batch {sub_idx + 1}/{total_sub_batches}")
+                logger.info(
+                    f"Freed memory after sub-batch {sub_idx + 1}/{total_sub_batches}"
+                )
 
         if graph_store and batch_graph_data:
-            logger.info(f"Upserting graph data for {len(batch_graph_data)} files to Neo4j...")
+            logger.info(
+                f"Upserting graph data for {len(batch_graph_data)} files to Neo4j..."
+            )
             for graph_data in batch_graph_data:
                 node_counts = graph_store.upsert_nodes(graph_data["nodes"])
                 relationship_counts = graph_store.upsert_relationships(graph_data["relationships"])
@@ -375,7 +397,9 @@ def run_pipeline(args) -> dict:
         gc.collect()
 
     stats["total_chunks"] = total_chunks_created
-    logger.info(f"Created {total_chunks_created} total chunks from {stats['files_parsed']} files")
+    logger.info(
+        f"Created {total_chunks_created} total chunks from {stats['files_parsed']} files"
+    )
 
     # Dry-run summary
     if args.dry_run:
@@ -406,7 +430,7 @@ def run_pipeline(args) -> dict:
     print(f"  Files processed: {stats['files_parsed']}/{stats['files_found']}")
     print(f"  Chunks embedded: {stats['chunks_embedded']}")
     print(f"  Chunks stored:   {stats['chunks_stored']}")
-    if stats['files_graphed'] > 0:
+    if stats["files_graphed"] > 0:
         print(f"  Files graphed:   {stats['files_graphed']}")
         print(f"  Nodes created:   {stats['nodes_created']}")
         print(f"  Relationships:   {stats['relationships_created']}")

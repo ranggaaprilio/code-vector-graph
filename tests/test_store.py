@@ -4,7 +4,10 @@ import pytest
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance
 
-from src.store import VectorStore
+from src.config import MODEL_CONFIGS, DEFAULT_MODEL_ID
+from src.store import VectorStore, get_collection_name
+
+TEST_DIMENSIONS = MODEL_CONFIGS[DEFAULT_MODEL_ID]["dimensions"]
 
 
 @pytest.fixture
@@ -13,7 +16,7 @@ def in_memory_store():
     store = VectorStore(
         collection_name="test_collection",
         qdrant_url=":memory:",
-        embedding_dimensions=768,
+        embedding_dimensions=TEST_DIMENSIONS,
     )
     return store
 
@@ -25,7 +28,7 @@ def sample_chunks():
         {
             "file_path": "/test/file1.js",
             "chunk_index": 0,
-            "embedding": [0.1] * 768,
+            "embedding": [0.1] * TEST_DIMENSIONS,
             "language": "javascript",
             "start_line": 1,
             "end_line": 10,
@@ -36,7 +39,7 @@ def sample_chunks():
         {
             "file_path": "/test/file1.js",
             "chunk_index": 1,
-            "embedding": [0.2] * 768,
+            "embedding": [0.2] * TEST_DIMENSIONS,
             "language": "javascript",
             "start_line": 11,
             "end_line": 20,
@@ -47,7 +50,7 @@ def sample_chunks():
         {
             "file_path": "/test/file2.ts",
             "chunk_index": 0,
-            "embedding": [0.3] * 768,
+            "embedding": [0.3] * TEST_DIMENSIONS,
             "language": "typescript",
             "start_line": 1,
             "end_line": 5,
@@ -65,7 +68,7 @@ class TestVectorStoreInit:
         """Test initialization with default parameters."""
         store = VectorStore()
         assert store.collection_name == "code_chunks"
-        assert store.embedding_dimensions == 3584
+        assert store.embedding_dimensions == TEST_DIMENSIONS
 
     def test_init_with_custom_params(self):
         """Test initialization with custom parameters."""
@@ -94,13 +97,13 @@ class TestCreateCollection:
     """Test collection creation."""
 
     def test_create_collection_with_correct_params(self, in_memory_store):
-        """Test collection is created with 768 dimensions and COSINE distance."""
+        """Test collection is created with correct dimensions and COSINE distance."""
         in_memory_store.create_collection()
 
         info = in_memory_store.client.get_collection("test_collection")
         config = info.config.params.vectors
 
-        assert config.size == 768
+        assert config.size == TEST_DIMENSIONS
         assert config.distance == Distance.COSINE
 
     def test_create_collection_idempotent(self, in_memory_store):
@@ -156,7 +159,7 @@ class TestUpsertChunks:
             {
                 "file_path": f"/test/file{i}.js",
                 "chunk_index": 0,
-                "embedding": [0.1] * 768,
+                "embedding": [0.1] * TEST_DIMENSIONS,
                 "language": "javascript",
                 "start_line": 1,
                 "end_line": 10,
@@ -225,7 +228,7 @@ class TestMetadataPayload:
                 "id": "11111111-1111-5111-8111-111111111111",
                 "file_path": "/test/file1.js",
                 "chunk_index": 0,
-                "embedding": [0.1] * 768,
+                "embedding": [0.1] * TEST_DIMENSIONS,
                 "language": "javascript",
                 "start_line": 0,
                 "end_line": 0,
