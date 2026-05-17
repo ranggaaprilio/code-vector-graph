@@ -189,6 +189,8 @@ class VectorStore:
                 - token_count: int
                 - decorators: list[str]
                 - file_hash: str
+                - graph_nodes: list[dict]
+                - graph_relationships: list[dict]
 
         Returns:
             PointStruct for Qdrant upsert
@@ -221,6 +223,8 @@ class VectorStore:
             "token_count": chunk.get("token_count", 0),
             "decorators": chunk.get("decorators", []),
             "file_hash": file_hash,
+            "graph_nodes": chunk.get("graph_nodes", []),
+            "graph_relationships": chunk.get("graph_relationships", []),
         }
 
         return PointStruct(

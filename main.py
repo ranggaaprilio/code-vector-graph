@@ -164,6 +164,7 @@ def run_pipeline(args) -> dict:
 
         # Accumulate chunks for this batch only
         batch_chunks = []
+        batch_graph_data = []
 
         for file_info in file_batch:
             file_path = file_info["path"]
@@ -184,6 +185,15 @@ def run_pipeline(args) -> dict:
 
             # Extract AST metadata (if parsing succeeded)
             ast_metadata = extract_ast_metadata(parsed.get("tree"), parsed.get("source_bytes"))
+            graph_data = None
+            if store is not None:
+                graph_data = extract_graph_entities(
+                    parsed["tree"],
+                    parsed["source_bytes"],
+                    file_path,
+                    language,
+                    file_hash,
+                )
 
             # Free large objects immediately after metadata extraction
             parsed.pop("source_bytes", None)
@@ -215,10 +225,56 @@ def run_pipeline(args) -> dict:
             )
 
             # Flatten metadata and add text_content field for storage
+            chunk_nodes = []
             for chunk in chunks:
                 metadata = chunk.pop("metadata", {})
                 chunk.update(metadata)
                 chunk["text_content"] = chunk["text"]
+
+                if graph_data is not None:
+                    chunk_id = store._generate_deterministic_id(
+                        chunk.get("file_path", ""),
+                        chunk.get("chunk_index", 0),
+                        chunk.get("file_hash", ""),
+                    )
+                    chunk_node = {
+                        "label": "Chunk",
+                        "id": chunk_id,
+                        "properties": {
+                            "qdrant_id": chunk_id,
+                            "file_path": chunk.get("file_path", ""),
+                            "start_line": chunk.get("start_line", 0),
+                            "end_line": chunk.get("end_line", 0),
+                            "chunk_index": chunk.get("chunk_index", 0),
+                            "total_chunks": chunk.get("total_chunks", 0),
+                            "function_name": chunk.get("function_name"),
+                            "class_name": chunk.get("class_name"),
+                            "parent_function": chunk.get("parent_function"),
+                            "imports": chunk.get("imports", []),
+                            "exports": chunk.get("exports", []),
+                            "symbols_defined": chunk.get("symbols_defined", []),
+                            "call_sites": chunk.get("call_sites", []),
+                            "is_exported": chunk.get("is_exported", False),
+                            "visibility": chunk.get("visibility"),
+                            "nesting_depth": chunk.get("nesting_depth", 0),
+                            "token_count": chunk.get("token_count", 0),
+                            "decorators": chunk.get("decorators", []),
+                            "file_hash": chunk.get("file_hash", ""),
+                        }
+                    }
+                    chunk_nodes.append(chunk_node)
+
+            if graph_data is not None and chunk_nodes:
+                graph_data["nodes"].extend(chunk_nodes)
+                for chunk in chunks:
+                    chunk["graph_nodes"] = []
+                    chunk["graph_relationships"] = []
+                chunks[0]["graph_nodes"] = graph_data["nodes"]
+                chunks[0]["graph_relationships"] = graph_data["relationships"]
+
+                if graph_store:
+                    batch_graph_data.append(graph_data)
+                    stats["files_graphed"] += 1
 
             batch_chunks.extend(chunks)
             
@@ -235,56 +291,7 @@ def run_pipeline(args) -> dict:
             batch_chunks.clear()
             continue
 
-        # Pre-extract graph data before embedding to avoid holding
-        # embedding tensors in memory while re-parsing files
-        batch_graph_data = []
-        if graph_store and batch_chunks:
-            logger.info(f"Pre-extracting graph entities for {len(file_batch)} files...")
-            for file_info in file_batch:
-                file_path = file_info["path"]
-                grammar = file_info["grammar"]
-                language = file_info["language"]
-                file_hash = file_info.get("file_hash", "")
-
-                parsed = parse_file(file_path, grammar)
-                if parsed is None:
-                    logger.warning(f"Failed to re-parse file for graph: {file_path}")
-                    continue
-
-                graph_data = extract_graph_entities(
-                    parsed["tree"],
-                    parsed["source_bytes"],
-                    file_path,
-                    language,
-                    file_hash
-                )
-
-                chunk_nodes = []
-                for chunk in batch_chunks:
-                    if chunk.get("file_path") == file_path:
-                        chunk_node = {
-                            "label": "Chunk",
-                            "id": chunk.get("id", ""),
-                            "properties": {
-                                "qdrant_id": chunk.get("id", ""),
-                                "file_path": chunk.get("file_path", ""),
-                                "start_line": chunk.get("start_line", 0),
-                                "end_line": chunk.get("end_line", 0),
-                            }
-                        }
-                        chunk_nodes.append(chunk_node)
-
-                if chunk_nodes:
-                    graph_data["nodes"].extend(chunk_nodes)
-
-                batch_graph_data.append(graph_data)
-                stats["files_graphed"] += 1
-
-                parsed.clear()
-                del parsed
-                del graph_data
-                del chunk_nodes
-
+        if graph_store and batch_graph_data:
             logger.info(f"Graph extraction complete for {len(batch_graph_data)} files")
 
         # Stream embeddings to Qdrant in sub-batches to cap memory usage
@@ -316,10 +323,10 @@ def run_pipeline(args) -> dict:
         if graph_store and batch_graph_data:
             logger.info(f"Upserting graph data for {len(batch_graph_data)} files to Neo4j...")
             for graph_data in batch_graph_data:
-                graph_store.upsert_nodes(graph_data["nodes"])
-                graph_store.upsert_relationships(graph_data["relationships"])
-                stats["nodes_created"] += len(graph_data["nodes"])
-                stats["relationships_created"] += len(graph_data["relationships"])
+                node_counts = graph_store.upsert_nodes(graph_data["nodes"])
+                relationship_counts = graph_store.upsert_relationships(graph_data["relationships"])
+                stats["nodes_created"] += node_counts["nodes_created"]
+                stats["relationships_created"] += relationship_counts["relationships_created"]
 
             for gd in batch_graph_data:
                 del gd

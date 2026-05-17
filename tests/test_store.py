@@ -192,6 +192,8 @@ class TestMetadataPayload:
             "function_name",
             "total_chunks",
             "text_content",
+            "graph_nodes",
+            "graph_relationships",
         ]
 
         for field in required_fields:
@@ -213,6 +215,8 @@ class TestMetadataPayload:
         assert payload["function_name"] == "testFunc"
         assert payload["total_chunks"] == 2
         assert payload["text_content"] == "function testFunc() { return 1; }"
+        assert payload["graph_nodes"] == []
+        assert payload["graph_relationships"] == []
 
     def test_null_function_name(self, in_memory_store, sample_chunks):
         """Test that null function_name is preserved."""

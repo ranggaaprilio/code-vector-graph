@@ -7,6 +7,16 @@ from src.graph_schema import NODE_LABELS
 from src.graph_store import GraphStore
 
 
+class FakeCounters:
+    nodes_created = 2
+    relationships_created = 1
+    properties_set = 3
+
+
+class FakeSummary:
+    counters = FakeCounters()
+
+
 class TestGraphStore:
     @patch('src.graph_store.GraphDatabase.driver')
     def test_init(self, mock_driver_class):
@@ -44,6 +54,7 @@ class TestGraphStore:
             cypher = call_args[0][0]
             assert "CREATE CONSTRAINT" in cypher
             assert "IS UNIQUE" in cypher
+            assert call_args.kwargs["database_"] == "neo4j"
 
     @patch('src.graph_store.GraphDatabase.driver')
     def test_upsert_nodes(self, mock_driver_class):
@@ -55,12 +66,42 @@ class TestGraphStore:
             {"label": "File", "id": "uuid1", "properties": {"path": "test.js"}},
             {"label": "Class", "id": "uuid2", "properties": {"name": "MyClass"}},
         ]
-        gs.upsert_nodes(nodes)
+        mock_driver.execute_query.return_value = ([], FakeSummary(), [])
+        counts = gs.upsert_nodes(nodes)
 
         cypher = mock_driver.execute_query.call_args[0][0]
         assert "UNWIND" in cypher
         assert "MERGE" in cypher  # ensure idempotent upsert
         assert "CREATE" not in cypher
+        assert counts["attempted_nodes"] == 2
+        assert counts["nodes_created"] == 4
+        assert mock_driver.execute_query.call_args.kwargs["database_"] == "neo4j"
+
+    @patch('src.graph_store.GraphDatabase.driver')
+    def test_upsert_nodes_rejects_unknown_label(self, mock_driver_class):
+        mock_driver = MagicMock()
+        mock_driver_class.return_value = mock_driver
+
+        gs = GraphStore()
+        nodes = [{"label": "File`) DETACH DELETE n //", "id": "uuid1", "properties": {}}]
+
+        with pytest.raises(ValueError, match="Unknown Neo4j node label"):
+            gs.upsert_nodes(nodes)
+
+        mock_driver.execute_query.assert_not_called()
+
+    @patch('src.graph_store.GraphDatabase.driver')
+    def test_upsert_nodes_rejects_missing_id(self, mock_driver_class):
+        mock_driver = MagicMock()
+        mock_driver_class.return_value = mock_driver
+
+        gs = GraphStore()
+        nodes = [{"label": "File", "properties": {}}]
+
+        with pytest.raises(ValueError, match="missing id"):
+            gs.upsert_nodes(nodes)
+
+        mock_driver.execute_query.assert_not_called()
 
     @patch('src.graph_store.GraphDatabase.driver')
     def test_upsert_relationships(self, mock_driver_class):
@@ -71,12 +112,31 @@ class TestGraphStore:
         batch = [
             {"source_id": "s1", "target_id": "t1", "properties": {"weight": 0.5}},
         ]
-        gs.upsert_relationships(batch)
+        mock_driver.execute_query.return_value = ([], FakeSummary(), [])
+        counts = gs.upsert_relationships(batch)
 
         cypher = mock_driver.execute_query.call_args[0][0]
         assert "UNWIND" in cypher
         assert "MERGE" in cypher
         assert "CREATE" not in cypher
+        assert counts["attempted_relationships"] == 1
+        assert counts["relationships_created"] == 1
+        assert mock_driver.execute_query.call_args.kwargs["database_"] == "neo4j"
+
+    @patch('src.graph_store.GraphDatabase.driver')
+    def test_upsert_relationships_rejects_unknown_type(self, mock_driver_class):
+        mock_driver = MagicMock()
+        mock_driver_class.return_value = mock_driver
+
+        gs = GraphStore()
+        batch = [
+            {"type": "CALLS`) DELETE r //", "source_id": "s1", "target_id": "t1", "properties": {}},
+        ]
+
+        with pytest.raises(ValueError, match="Unknown Neo4j relationship type"):
+            gs.upsert_relationships(batch)
+
+        mock_driver.execute_query.assert_not_called()
 
     @patch('src.graph_store.GraphDatabase.driver')
     def test_query_graph(self, mock_driver_class):
@@ -87,7 +147,7 @@ class TestGraphStore:
         query = "MATCH (n) RETURN n"
         params = {"limit": 10}
         gs.query_graph(query, params)
-        mock_driver.execute_query.assert_called_with(query, params)
+        mock_driver.execute_query.assert_called_with(query, params, database_="neo4j")
 
     @patch('src.graph_store.GraphDatabase.driver')
     def test_get_related_nodes(self, mock_driver_class):
