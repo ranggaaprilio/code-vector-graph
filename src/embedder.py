@@ -147,9 +147,58 @@ class HuggingFaceEmbedder(Embedder):
                 tokens = self.tokenizer.encode(t, max_length=512, truncation=False)
                 if len(tokens) > 512:
                     count += 1
-            except Exception:
+            except (RuntimeError, ValueError, OSError, UnicodeDecodeError):
                 continue
         return count
+
+    def _clear_device_cache(self) -> None:
+        if self.device == "mps":
+            torch.mps.empty_cache()
+        elif self.device == "cuda":
+            torch.cuda.empty_cache()
+
+    def _is_mps_out_of_memory(self, error: RuntimeError) -> bool:
+        return self.device == "mps" and "MPS backend out of memory" in str(error)
+
+    def _embed_text_batch(self, batch_texts: List[str]) -> list[list[float]]:
+        inputs = self.tokenizer(
+            batch_texts,
+            padding=True,
+            truncation=True,
+            max_length=512,
+            return_tensors="pt",
+        )
+
+        try:
+            for k, v in inputs.items():
+                if isinstance(v, torch.Tensor):
+                    logger.debug(f"Moving {k} to device")
+                    inputs[k] = v.to(self.device)
+
+            outputs = self.model(**inputs, return_dict=True)
+            last_hidden = outputs.last_hidden_state
+            attention_mask = inputs.get("attention_mask")
+            if attention_mask is not None:
+                sequence_lengths = (attention_mask.sum(dim=1) - 1).to(
+                    last_hidden.device
+                )
+                embeddings = last_hidden[
+                    torch.arange(last_hidden.size(0), device=last_hidden.device),
+                    sequence_lengths,
+                ]
+            else:
+                embeddings = last_hidden[:, -1, :]
+            embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=-1)
+            embeddings_list = embeddings.cpu().tolist()
+
+            del outputs, last_hidden, embeddings
+            return embeddings_list
+        finally:
+            for v in inputs.values():
+                if isinstance(v, torch.Tensor):
+                    del v
+            del inputs
+            self._clear_device_cache()
 
     def embed_chunks(self, chunks: list[dict], batch_size: int = 64) -> list[dict]:
         if not chunks:
@@ -179,54 +228,47 @@ class HuggingFaceEmbedder(Embedder):
         )
 
         with torch.no_grad():
-            for batch_idx in range(total_batches):
-                start = batch_idx * batch_size
-                end = min(start + batch_size, total)
+            start = 0
+            batch_idx = 0
+            current_batch_size = batch_size
+            while start < total:
+                end = min(start + current_batch_size, total)
                 batch_texts = texts[start:end]
                 logger.info(
-                    f"Embedding batch {batch_idx + 1}/{total_batches} ({len(batch_texts)} chunks)..."
+                    "Embedding batch %s (%s-%s/%s, %s chunks)...",
+                    batch_idx + 1,
+                    start + 1,
+                    end,
+                    total,
+                    len(batch_texts),
                 )
-
-                inputs = self.tokenizer(
-                    batch_texts,
-                    padding=True,
-                    truncation=True,
-                    max_length=512,
-                    return_tensors="pt",
-                )
-
-                for k, v in inputs.items():
-                    if isinstance(v, torch.Tensor):
-                        logger.debug(f"Moving {k} to device")
-                        inputs[k] = v.to(self.device)
 
                 logger.debug(f"Running model forward for batch {batch_idx + 1}...")
-                outputs = self.model(**inputs, return_dict=True)
+                try:
+                    embeddings_list = self._embed_text_batch(batch_texts)
+                except RuntimeError as e:
+                    if self._is_mps_out_of_memory(e) and current_batch_size > 1:
+                        next_batch_size = max(1, current_batch_size // 2)
+                        logger.warning(
+                            "MPS out of memory while embedding %s chunks. "
+                            "Retrying with batch_size=%s.",
+                            len(batch_texts),
+                            next_batch_size,
+                        )
+                        current_batch_size = next_batch_size
+                        self._clear_device_cache()
+                        continue
+                    if self._is_mps_out_of_memory(e):
+                        logger.error(
+                            "MPS out of memory while embedding a single chunk. "
+                            "Try reducing --chunk-size or run with CPU."
+                        )
+                    raise
                 logger.debug(f"Model forward complete for batch {batch_idx + 1}")
 
-                last_hidden = outputs.last_hidden_state
-                attention_mask = inputs.get("attention_mask")
-                if attention_mask is not None:
-                    sequence_lengths = attention_mask.sum(dim=1) - 1
-                    embeddings = last_hidden[
-                        torch.arange(last_hidden.size(0)), sequence_lengths
-                    ]
-                else:
-                    embeddings = last_hidden[:, -1, :]
-                embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=-1)
-
-                embeddings_list = embeddings.cpu().tolist()
                 logger.info(
                     f"Batch {batch_idx + 1}/{total_batches} embedded successfully"
                 )
-
-                del outputs, last_hidden, embeddings
-                for v in inputs.values():
-                    if isinstance(v, torch.Tensor):
-                        del v
-                del inputs
-                if self.device == "mps":
-                    torch.mps.empty_cache()
 
                 for i, emb in enumerate(embeddings_list):
                     idx = start + i
@@ -238,6 +280,8 @@ class HuggingFaceEmbedder(Embedder):
                     )
                     chunk["embedding"] = emb
                     result_chunks.append(chunk)
+                start = end
+                batch_idx += 1
 
         logger.info(f"Embedding complete: {len(result_chunks)} chunks processed")
         return result_chunks
@@ -259,9 +303,12 @@ class HuggingFaceEmbedder(Embedder):
             last_hidden = outputs.last_hidden_state
             attention_mask = inputs.get("attention_mask")
             if attention_mask is not None:
-                sequence_length = attention_mask.sum(dim=1) - 1
+                sequence_length = (attention_mask.sum(dim=1) - 1).to(
+                    last_hidden.device
+                )
                 embedding = last_hidden[
-                    torch.arange(last_hidden.size(0)), sequence_length
+                    torch.arange(last_hidden.size(0), device=last_hidden.device),
+                    sequence_length,
                 ]
             else:
                 embedding = last_hidden[:, -1, :]

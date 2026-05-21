@@ -35,7 +35,12 @@ class TestHuggingFaceEmbedderInit:
         embedder = HuggingFaceEmbedder()
 
         assert embedder.model_name == MODEL_CONFIGS[DEFAULT_MODEL_ID]["model_name"]
-        assert embedder.device == "cpu"
+        if torch.backends.mps.is_available():
+            assert embedder.device == "mps"
+        elif torch.cuda.is_available():
+            assert embedder.device == "cuda"
+        else:
+            assert embedder.device == "cpu"
         assert embedder.model_id == DEFAULT_MODEL_ID
         mock_model.eval.assert_called_once()
 
@@ -207,6 +212,48 @@ class TestHuggingFaceEmbedderEmbedChunks:
         expected_prefix = JINA_TASK_PREFIXES["code2code"]["passage"]
         passed_texts = call_args[0][0] if call_args[0] else call_args[1].get("texts", [])
         assert passed_texts[0].startswith(expected_prefix)
+
+    @patch("src.embedder.torch.mps.empty_cache")
+    def test_embed_chunks_retries_smaller_batch_after_mps_oom(self, mock_empty_cache):
+        embedder = _mock_embedder_init()
+        embedder.device = "mps"
+        embedder.tokenizer = MagicMock()
+        embedder.tokenizer.encode.return_value = []
+        embedder._embed_text_batch = MagicMock(
+            side_effect=[
+                RuntimeError("MPS backend out of memory"),
+                [[0.1] * embedder.dimensions, [0.2] * embedder.dimensions],
+                [[0.3] * embedder.dimensions, [0.4] * embedder.dimensions],
+            ]
+        )
+
+        chunks = [
+            {"text": "chunk 1"},
+            {"text": "chunk 2"},
+            {"text": "chunk 3"},
+            {"text": "chunk 4"},
+        ]
+
+        result = embedder.embed_chunks(chunks, batch_size=4)
+
+        assert len(result) == 4
+        assert result[0]["embedding"] == [0.1] * embedder.dimensions
+        assert result[3]["embedding"] == [0.4] * embedder.dimensions
+        assert embedder._embed_text_batch.call_args_list[0].args[0] == [
+            "chunk 1",
+            "chunk 2",
+            "chunk 3",
+            "chunk 4",
+        ]
+        assert embedder._embed_text_batch.call_args_list[1].args[0] == [
+            "chunk 1",
+            "chunk 2",
+        ]
+        assert embedder._embed_text_batch.call_args_list[2].args[0] == [
+            "chunk 3",
+            "chunk 4",
+        ]
+        mock_empty_cache.assert_called()
 
 
 class TestHuggingFaceEmbedderEmbedQuery:
