@@ -626,7 +626,7 @@ python mcp_server.py
 
 ## License
 
-[Your License Here]
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
 
 ---
 
