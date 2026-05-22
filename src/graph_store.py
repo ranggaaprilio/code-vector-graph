@@ -1,7 +1,7 @@
 import logging
 from neo4j import GraphDatabase
 from src.config import NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD, NEO4J_DATABASE
-from src.graph_schema import NODE_LABELS, RELATIONSHIP_TYPES
+from src.graph_schema import NODE_LABELS, RELATIONSHIP_TYPES, validate_node
 
 logger = logging.getLogger(__name__)
 NAME = __name__
@@ -72,6 +72,8 @@ class GraphStore:
                 raise ValueError(f"Neo4j node is missing id for label: {lbl}")
             if not isinstance(n.get("properties"), dict):
                 raise ValueError(f"Neo4j node properties must be a dict for label: {lbl}")
+            if not validate_node(lbl, n["properties"]):
+                raise ValueError(f"Invalid Neo4j node properties for label: {lbl}")
             by_label.setdefault(lbl, []).append(n)
 
         counts = {"nodes_created": 0, "relationships_created": 0, "properties_set": 0}

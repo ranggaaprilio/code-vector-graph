@@ -1,10 +1,36 @@
-import unittest
 from unittest.mock import patch, MagicMock
 
 import pytest
 
 from src.graph_schema import NODE_LABELS
 from src.graph_store import GraphStore
+
+
+def valid_file_properties(**overrides):
+    properties = {
+        "path": "test.js",
+        "language": "javascript",
+        "file_hash": "abc123",
+        "line_count": 10,
+        "exports": [],
+        "imports": [],
+    }
+    properties.update(overrides)
+    return properties
+
+
+def valid_class_properties(**overrides):
+    properties = {
+        "name": "MyClass",
+        "start_line": 1,
+        "end_line": 10,
+        "is_exported": False,
+        "visibility": "private",
+        "decorators": [],
+        "parent_class": None,
+    }
+    properties.update(overrides)
+    return properties
 
 
 class FakeCounters:
@@ -63,8 +89,8 @@ class TestGraphStore:
 
         gs = GraphStore()
         nodes = [
-            {"label": "File", "id": "uuid1", "properties": {"path": "test.js"}},
-            {"label": "Class", "id": "uuid2", "properties": {"name": "MyClass"}},
+            {"label": "File", "id": "uuid1", "properties": valid_file_properties()},
+            {"label": "Class", "id": "uuid2", "properties": valid_class_properties()},
         ]
         mock_driver.execute_query.return_value = ([], FakeSummary(), [])
         counts = gs.upsert_nodes(nodes)
@@ -99,6 +125,47 @@ class TestGraphStore:
         nodes = [{"label": "File", "properties": {}}]
 
         with pytest.raises(ValueError, match="missing id"):
+            gs.upsert_nodes(nodes)
+
+        mock_driver.execute_query.assert_not_called()
+
+    @patch('src.graph_store.GraphDatabase.driver')
+    def test_upsert_nodes_rejects_missing_required_property(self, mock_driver_class):
+        mock_driver = MagicMock()
+        mock_driver_class.return_value = mock_driver
+
+        gs = GraphStore()
+        properties = valid_file_properties()
+        del properties["file_hash"]
+        nodes = [{"label": "File", "id": "uuid1", "properties": properties}]
+
+        with pytest.raises(ValueError, match="Invalid Neo4j node properties"):
+            gs.upsert_nodes(nodes)
+
+        mock_driver.execute_query.assert_not_called()
+
+    @patch('src.graph_store.GraphDatabase.driver')
+    def test_upsert_nodes_rejects_wrong_property_type(self, mock_driver_class):
+        mock_driver = MagicMock()
+        mock_driver_class.return_value = mock_driver
+
+        gs = GraphStore()
+        nodes = [{"label": "File", "id": "uuid1", "properties": valid_file_properties(line_count="10")}]
+
+        with pytest.raises(ValueError, match="Invalid Neo4j node properties"):
+            gs.upsert_nodes(nodes)
+
+        mock_driver.execute_query.assert_not_called()
+
+    @patch('src.graph_store.GraphDatabase.driver')
+    def test_upsert_nodes_rejects_non_dict_properties(self, mock_driver_class):
+        mock_driver = MagicMock()
+        mock_driver_class.return_value = mock_driver
+
+        gs = GraphStore()
+        nodes = [{"label": "File", "id": "uuid1", "properties": []}]
+
+        with pytest.raises(ValueError, match="properties must be a dict"):
             gs.upsert_nodes(nodes)
 
         mock_driver.execute_query.assert_not_called()
