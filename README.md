@@ -26,8 +26,10 @@ A Python CLI tool that transforms JavaScript/TypeScript code repositories into a
 
 | Model ID | Full Name | Dimensions | Dtype | Task Prefixes | Default |
 |----------|-----------|------------|-------|---------------|---------|
-| `nomic` | `nomic-ai/nomic-embed-code` | 3584 | float16 (float32 on MPS/ROCm) | None | Yes |
-| `jina` | `jinaai/jina-code-embeddings-1.5b` | 1536 | bfloat16 (float32 on MPS/ROCm) | `code2code` + `nl2code` | No |
+| `nomic` | `nomic-ai/nomic-embed-code` | 3584 | float16 (CUDA) / bfloat16 (MPS) / float32 (ROCm, CPU) | None | Yes |
+| `jina` | `jinaai/jina-code-embeddings-1.5b` | 1536 | bfloat16 (CUDA, MPS) / float32 (ROCm, CPU) | `code2code` + `nl2code` | No |
+
+Precision is auto-selected per device and can be overridden with `--dtype {auto,float16,bfloat16,float32}`. On Apple Silicon (MPS) the default is **bfloat16** — roughly half the memory and ~2x the throughput of float32, with float32's exponent range (no overflow/NaN risk). ROCm and CPU stay on float32.
 
 - **Nomic** (default): Higher-dimensional (3584), no task prefixes needed, uses `float16` precision. Good general-purpose code embedding.
 - **Jina**: Lower-dimensional (1536), prepends task-specific prefixes (`code2code` for code passages, `nl2code` for queries) to improve retrieval accuracy. Uses `bfloat16` precision.
@@ -269,6 +271,8 @@ python main.py \
 |--------|---------|-------------|
 | `--repo-path` | *required* | Path to the repository to process |
 | `--model` | `nomic` | Embedding model: `nomic` (3584-dim) or `jina` (1536-dim) |
+| `--device` | `auto` | Compute device: `auto`, `mps`, `cuda`, or `cpu` |
+| `--dtype` | `auto` | Model precision: `auto`, `float16`, `bfloat16`, `float32` (auto → bfloat16 on MPS) |
 | `--qdrant-url` | `http://localhost:6333` | Qdrant server URL |
 | `--collection-name` | `code_chunks` | Base Qdrant collection name (model suffix + dimensions appended automatically) |
 | `--chunk-size` | `400` | Tokens per chunk |
@@ -475,14 +479,14 @@ The pipeline supports two embedding models, selectable via `--model`:
 **Nomic (default)**:
 - **Model**: `nomic-ai/nomic-embed-code`
 - **Dimensions**: 3584
-- **Precision**: float16 on CUDA, float32 on MPS/ROCm/CPU
+- **Precision**: float16 on CUDA, bfloat16 on MPS, float32 on ROCm/CPU (override with `--dtype`)
 - **Task Prefixes**: None (the model works without prefixes)
 - **Collection name**: `code_chunks_nomic-embed-code_3584`
 
 **Jina**:
 - **Model**: `jinaai/jina-code-embeddings-1.5b`
 - **Dimensions**: 1536
-- **Precision**: bfloat16 on CUDA, float32 on MPS/ROCm/CPU
+- **Precision**: bfloat16 on CUDA and MPS, float32 on ROCm/CPU (override with `--dtype`)
 - **Task Prefixes**: `code2code` for passage indexing, `nl2code` for queries
 - **Collection name**: `code_chunks_jina-code-embeddings-1.5b_1536`
 

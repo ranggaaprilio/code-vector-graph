@@ -95,10 +95,20 @@ class GraphStore:
         counts["attempted_nodes"] = len(nodes)
         return counts
 
-    def upsert_relationships(self, relationships):
-        # Group by relationship type so we can use the actual type in Cypher.
-        # Neo4j doesn't support parameterized relationship types, so we batch per type.
-        by_type = {}
+    def upsert_relationships(self, relationships, node_labels=None):
+        # Group by (type, source_label, target_label). Neo4j can't parameterize
+        # relationship types OR node labels, so both are baked into the Cypher and
+        # must be validated to prevent injection.
+        #
+        # Endpoint labels are resolved from the optional node_labels map
+        # ({node_id: label}). A concrete label lets the per-label `id` index serve
+        # the lookup; without it Neo4j falls back to an all-nodes scan, which is the
+        # dominant cost as the graph grows. Unknown/missing labels (e.g. an endpoint
+        # not present in the current batch) fall back to a label-less MATCH so we
+        # never drop a valid relationship.
+        node_labels = node_labels or {}
+
+        grouped = {}
         for rel in relationships:
             rel_type = rel.get("type", "REFERENCES")
             if rel_type not in RELATIONSHIP_TYPES:
@@ -107,16 +117,22 @@ class GraphStore:
                 raise ValueError(f"Neo4j relationship is missing endpoint id for type: {rel_type}")
             if not isinstance(rel.get("properties", {}), dict):
                 raise ValueError(f"Neo4j relationship properties must be a dict for type: {rel_type}")
-            by_type.setdefault(rel_type, []).append(rel)
+            source_label = node_labels.get(rel["source_id"])
+            target_label = node_labels.get(rel["target_id"])
+            source_label = source_label if source_label in NODE_LABELS else None
+            target_label = target_label if target_label in NODE_LABELS else None
+            grouped.setdefault((rel_type, source_label, target_label), []).append(rel)
 
         counts = {"nodes_created": 0, "relationships_created": 0, "properties_set": 0}
-        for rel_type, batch_rels in by_type.items():
+        for (rel_type, source_label, target_label), batch_rels in grouped.items():
+            source_pattern = f"s:{source_label}" if source_label else "s"
+            target_pattern = f"t:{target_label}" if target_label else "t"
             for i in range(0, len(batch_rels), BATCH_SIZE):
                 batch = batch_rels[i:i + BATCH_SIZE]
                 cypher = f"""
                 UNWIND $batch AS item
-                MATCH (s {{id: item.source_id}})
-                MATCH (t {{id: item.target_id}})
+                MATCH ({source_pattern} {{id: item.source_id}})
+                MATCH ({target_pattern} {{id: item.target_id}})
                 MERGE (s)-[r:{rel_type}]->(t)
                 SET r += item.properties
                 """

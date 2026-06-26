@@ -22,6 +22,7 @@ NODE_LABELS = frozenset([
     "Interface",
     "TypeAlias",
     "Chunk",
+    "GlossaryEntry",
 ])
 
 # Relationship types for the code ontology

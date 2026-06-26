@@ -5,7 +5,14 @@ import uuid
 from typing import Any
 
 from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, Filter, PayloadSchemaType, PointStruct, VectorParams
+from qdrant_client.models import (
+    Distance,
+    Filter,
+    OptimizersConfigDiff,
+    PayloadSchemaType,
+    PointStruct,
+    VectorParams,
+)
 
 from src.config import (
     DEFAULT_COLLECTION_NAME,
@@ -48,11 +55,16 @@ def get_collection_name(base_name: str, provider: str, model: str | None = None)
 class VectorStore:
     """Qdrant vector store with deterministic UUID5 IDs."""
 
+    # Qdrant's default number of vectors per segment before the HNSW index is
+    # built. Used to restore normal indexing after a deferred bulk load.
+    DEFAULT_INDEXING_THRESHOLD = 20000
+
     def __init__(
         self,
         collection_name: str = DEFAULT_COLLECTION_NAME,
         qdrant_url: str = DEFAULT_QDRANT_URL,
         embedding_dimensions: int = EMBEDDING_DIMENSIONS,
+        prefer_grpc: bool = True,
     ):
         """
         Initialize VectorStore with Qdrant connection.
@@ -61,6 +73,9 @@ class VectorStore:
             collection_name: Name of the Qdrant collection
             qdrant_url: URL of the Qdrant server (use ":memory:" for in-memory mode)
             embedding_dimensions: Size of embedding vectors (dynamically set based on provider)
+            prefer_grpc: Use Qdrant's gRPC interface (port 6334) for upserts/queries.
+                gRPC is markedly faster than REST for bulk ingestion. Ignored for
+                in-memory mode.
         """
         self.collection_name = collection_name
         self.embedding_dimensions = embedding_dimensions
@@ -68,11 +83,39 @@ class VectorStore:
         if qdrant_url == ":memory:":
             self.client = QdrantClient(":memory:")
         else:
-            self.client = QdrantClient(url=qdrant_url)
+            self.client = QdrantClient(url=qdrant_url, prefer_grpc=prefer_grpc)
 
         logger.debug(
-            f"Initialized VectorStore for collection '{collection_name}' at {qdrant_url}"
+            f"Initialized VectorStore for collection '{collection_name}' at {qdrant_url} "
+            f"(prefer_grpc={prefer_grpc})"
         )
+
+    def begin_bulk_load(self) -> None:
+        """Defer HNSW index construction for the duration of a bulk ingest.
+
+        Setting ``indexing_threshold=0`` tells Qdrant to keep accepting vectors
+        without rebuilding the HNSW graph after each batch. Pair with
+        :meth:`end_bulk_load` to build the index once over the full collection,
+        which is far cheaper than incremental rebuilds during streaming upserts.
+        """
+        self.client.update_collection(
+            collection_name=self.collection_name,
+            optimizers_config=OptimizersConfigDiff(indexing_threshold=0),
+        )
+        logger.info("Deferred Qdrant indexing (indexing_threshold=0) for bulk load")
+
+    def end_bulk_load(self, indexing_threshold: int | None = None) -> None:
+        """Re-enable HNSW indexing after a bulk ingest completes."""
+        threshold = (
+            self.DEFAULT_INDEXING_THRESHOLD
+            if indexing_threshold is None
+            else indexing_threshold
+        )
+        self.client.update_collection(
+            collection_name=self.collection_name,
+            optimizers_config=OptimizersConfigDiff(indexing_threshold=threshold),
+        )
+        logger.info(f"Re-enabled Qdrant indexing (indexing_threshold={threshold})")
 
     def check_health(self) -> bool:
         """
@@ -199,8 +242,6 @@ class VectorStore:
                 - token_count: int
                 - decorators: list[str]
                 - file_hash: str
-                - graph_nodes: list[dict]
-                - graph_relationships: list[dict]
 
         Returns:
             PointStruct for Qdrant upsert
@@ -233,8 +274,6 @@ class VectorStore:
             "token_count": chunk.get("token_count", 0),
             "decorators": chunk.get("decorators", []),
             "file_hash": file_hash,
-            "graph_nodes": chunk.get("graph_nodes", []),
-            "graph_relationships": chunk.get("graph_relationships", []),
             "term": chunk.get("term"),
             "kind": chunk.get("kind"),
             "summary": chunk.get("summary"),
@@ -250,7 +289,7 @@ class VectorStore:
         )
 
     def upsert_chunks(
-        self, chunks: list[dict[str, Any]], batch_size: int = 100
+        self, chunks: list[dict[str, Any]], batch_size: int = 100, wait: bool = True
     ) -> list[str]:
         """
         Upsert chunks to Qdrant in batches with deterministic IDs.
@@ -258,6 +297,9 @@ class VectorStore:
         Args:
             chunks: List of chunk dictionaries
             batch_size: Number of points per batch
+            wait: If False, return as soon as Qdrant accepts each batch instead of
+                blocking until it is applied. Use False during bulk streaming for
+                higher throughput (the server still applies the queued writes).
 
         Returns:
             List of point IDs that were upserted
@@ -283,6 +325,7 @@ class VectorStore:
             self.client.upsert(
                 collection_name=self.collection_name,
                 points=batch,
+                wait=wait,
             )
 
         logger.info(f"Successfully upserted {len(points)} chunks")

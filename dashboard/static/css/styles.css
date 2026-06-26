@@ -1,0 +1,90 @@
+/* Custom styles on top of Tailwind */
+
+/* Code blocks */
+pre { margin: 0; }
+pre code.hljs {
+  border-radius: 0.375rem;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  max-height: 400px;
+  overflow-y: auto;
+}
+.chat-bubble code.hljs { max-height: 300px; }
+
+/* Cytoscape canvas */
+#cy-canvas {
+  width: 100%;
+  height: 100%;
+  min-height: 500px;
+  background: transparent;
+}
+
+/* Scrollbars */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #6b7280; border-radius: 3px; }
+
+/* Chat bubbles */
+.chat-user-msg {
+  background: #2563eb;
+  color: white;
+  border-radius: 1rem 1rem 0.25rem 1rem;
+  padding: 0.75rem 1rem;
+  max-width: 80%;
+  word-break: break-word;
+}
+.chat-assistant-msg {
+  background: #1f2937;
+  color: #e5e7eb;
+  border-radius: 1rem 1rem 1rem 0.25rem;
+  padding: 0.75rem 1rem;
+  max-width: 90%;
+  word-break: break-word;
+}
+.dark .chat-assistant-msg { background: #111827; }
+.light .chat-assistant-msg { background: #f3f4f6; color: #111827; }
+
+/* Markdown rendered in chat */
+.chat-assistant-msg h1,.chat-assistant-msg h2,.chat-assistant-msg h3 {
+  font-weight: 700; margin: 0.5rem 0;
+}
+.chat-assistant-msg p { margin: 0.4rem 0; }
+.chat-assistant-msg ul,.chat-assistant-msg ol { margin-left: 1.2rem; }
+.chat-assistant-msg code:not(pre code) {
+  background: #374151; border-radius: 3px; padding: 0 3px; font-size: 0.85em;
+}
+.chat-assistant-msg pre { margin: 0.5rem 0; border-radius: 0.375rem; overflow: hidden; }
+
+/* Dot animations */
+.typing-dots span {
+  display: inline-block;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: #60a5fa;
+  margin: 0 2px;
+  animation: bounce 1.2s infinite;
+}
+.typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+.typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes bounce {
+  0%,80%,100% { transform: scale(0.6); opacity: 0.4; }
+  40%         { transform: scale(1.0); opacity: 1; }
+}
+
+/* Sidebar active item */
+.nav-item-active {
+  background: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+}
+
+/* Skeleton loader */
+@keyframes shimmer {
+  0%  { background-position: -200% 0; }
+  100%{ background-position: 200% 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, #374151 25%, #4b5563 50%, #374151 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 0.25rem;
+}

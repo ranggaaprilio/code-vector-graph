@@ -1,0 +1,693 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Code Vector Graph</title>
+  <script src="/static/vendor/tailwind.min.js"></script>
+  <script>
+    tailwind.config = {
+      darkMode: "class",
+      theme: { extend: { fontFamily: { mono: ["ui-monospace","SFMono-Regular","Menlo","monospace"] } } }
+    };
+  </script>
+  <link rel="stylesheet" href="/static/vendor/github-dark.css" />
+  <link rel="stylesheet" href="/static/css/styles.css" />
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen font-sans" x-data>
+
+<!-- ============================================================
+     APP SHELL
+     ============================================================ -->
+<div class="flex h-screen overflow-hidden">
+
+  <!-- Sidebar -->
+  <aside class="w-56 flex-shrink-0 bg-gray-900 border-r border-gray-800 flex flex-col">
+    <div class="p-4 border-b border-gray-800">
+      <div class="text-sm font-bold text-blue-400 truncate">Code Vector Graph</div>
+      <div class="text-xs text-gray-500 mt-0.5">Knowledge Dashboard</div>
+    </div>
+
+    <!-- Health dots -->
+    <div class="px-4 py-2 border-b border-gray-800 flex gap-3 text-xs text-gray-400">
+      <template x-if="$store.app.healthLoaded">
+        <div class="flex gap-3">
+          <span class="flex items-center gap-1">
+            <span class="inline-block w-2 h-2 rounded-full" :class="$store.app.statusDot($store.app.health?.qdrant?.ok)"></span> Qdrant
+          </span>
+          <span class="flex items-center gap-1">
+            <span class="inline-block w-2 h-2 rounded-full" :class="$store.app.statusDot($store.app.health?.neo4j?.ok)"></span> Neo4j
+          </span>
+          <span class="flex items-center gap-1">
+            <span class="inline-block w-2 h-2 rounded-full" :class="$store.app.statusDot($store.app.health?.mcp_session?.ok)"></span> MCP
+          </span>
+        </div>
+      </template>
+      <template x-if="!$store.app.healthLoaded">
+        <span class="text-gray-600">checking…</span>
+      </template>
+    </div>
+
+    <!-- Nav -->
+    <nav class="flex-1 p-2 space-y-1">
+      <template x-for="item in [
+        {id:'overview', icon:'🏠', label:'Overview'},
+        {id:'vectors',  icon:'🔍', label:'Vectors'},
+        {id:'graph',    icon:'🕸',  label:'Graph'},
+        {id:'chat',     icon:'💬', label:'AI Chat'},
+      ]" :key="item.id">
+        <button
+          @click="$store.app.nav(item.id)"
+          class="w-full flex items-center gap-2 px-3 py-2 rounded text-sm text-left transition-colors hover:bg-gray-800"
+          :class="$store.app.view === item.id ? 'nav-item-active' : 'text-gray-300'"
+        >
+          <span x-text="item.icon"></span>
+          <span x-text="item.label"></span>
+        </button>
+      </template>
+    </nav>
+
+    <!-- Theme toggle -->
+    <div class="p-3 border-t border-gray-800">
+      <button @click="$store.app.toggleDark()" class="text-xs text-gray-500 hover:text-gray-300 flex items-center gap-1">
+        <span x-text="$store.app.dark ? '☀️ Light' : '🌙 Dark'"></span>
+      </button>
+    </div>
+  </aside>
+
+  <!-- Main content -->
+  <main class="flex-1 overflow-auto bg-gray-950">
+
+    <!-- ==================== OVERVIEW ==================== -->
+    <div x-show="$store.app.view === 'overview'" x-data="overviewView" x-init="init()">
+      <div class="p-6">
+        <h1 class="text-xl font-semibold text-gray-100 mb-6">Overview</h1>
+
+        <!-- Loading skeleton -->
+        <template x-if="loading">
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div class="skeleton h-32 rounded-lg"></div>
+            <div class="skeleton h-32 rounded-lg"></div>
+            <div class="skeleton h-32 rounded-lg"></div>
+          </div>
+        </template>
+
+        <template x-if="!loading">
+          <div>
+            <!-- Error -->
+            <template x-if="error">
+              <div class="mb-4 p-3 bg-red-900 border border-red-700 rounded text-sm text-red-200" x-text="error"></div>
+            </template>
+
+            <!-- Stats cards -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+
+              <!-- System status -->
+              <div class="bg-gray-900 border border-gray-800 rounded-lg p-4">
+                <h2 class="text-sm font-medium text-gray-400 mb-3">System Status</h2>
+                <div class="space-y-2">
+                  <template x-if="health">
+                    <div class="space-y-2">
+                      <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-300">Qdrant</span>
+                        <span class="text-xs px-2 py-0.5 rounded-full" :class="statusBadge(health.qdrant?.ok)" x-text="health.qdrant?.ok ? 'OK' : 'FAIL'"></span>
+                      </div>
+                      <div class="text-xs text-gray-500" x-text="health.qdrant?.url"></div>
+                      <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-300">Neo4j</span>
+                        <span class="text-xs px-2 py-0.5 rounded-full" :class="statusBadge(health.neo4j?.ok)" x-text="health.neo4j?.ok ? 'OK' : 'FAIL'"></span>
+                      </div>
+                      <div class="text-xs text-gray-500" x-text="health.neo4j?.uri"></div>
+                      <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-300">MCP Session</span>
+                        <span class="text-xs px-2 py-0.5 rounded-full" :class="statusBadge(health.mcp_session?.ok)" x-text="health.mcp_session?.ok ? 'OK' : 'Down'"></span>
+                      </div>
+                    </div>
+                  </template>
+                </div>
+              </div>
+
+              <!-- Collection stats -->
+              <div class="bg-gray-900 border border-gray-800 rounded-lg p-4">
+                <h2 class="text-sm font-medium text-gray-400 mb-3">Vector Collection</h2>
+                <template x-if="collection">
+                  <div class="space-y-2">
+                    <div class="text-xs text-blue-400 font-mono break-all" x-text="collection.collection"></div>
+                    <div class="flex justify-between text-sm">
+                      <span class="text-gray-400">Points</span>
+                      <span class="text-gray-100 font-mono" x-text="(collection.points_count || 0).toLocaleString()"></span>
+                    </div>
+                    <div class="flex justify-between text-sm">
+                      <span class="text-gray-400">Dimensions</span>
+                      <span class="text-gray-100 font-mono" x-text="collection.vector_size"></span>
+                    </div>
+                    <div class="flex justify-between text-sm">
+                      <span class="text-gray-400">Distance</span>
+                      <span class="text-gray-100" x-text="collection.distance"></span>
+                    </div>
+                    <div class="flex justify-between text-sm">
+                      <span class="text-gray-400">Status</span>
+                      <span class="text-green-400" x-text="collection.status"></span>
+                    </div>
+                  </div>
+                </template>
+                <template x-if="!collection">
+                  <p class="text-sm text-gray-500">No collection found. Run the indexing pipeline first.</p>
+                </template>
+              </div>
+
+              <!-- Graph stats -->
+              <div class="bg-gray-900 border border-gray-800 rounded-lg p-4">
+                <h2 class="text-sm font-medium text-gray-400 mb-3">Graph Database</h2>
+                <template x-if="graphStats">
+                  <div class="space-y-1">
+                    <div class="flex justify-between text-sm mb-2">
+                      <span class="text-gray-400">Total Nodes</span>
+                      <span class="text-gray-100 font-mono" x-text="(graphStats.node_total || 0).toLocaleString()"></span>
+                    </div>
+                    <div class="flex justify-between text-sm mb-3">
+                      <span class="text-gray-400">Total Rels</span>
+                      <span class="text-gray-100 font-mono" x-text="(graphStats.rel_total || 0).toLocaleString()"></span>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            <!-- Node label chart -->
+            <template x-if="graphStats && topLabels().length">
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="bg-gray-900 border border-gray-800 rounded-lg p-4">
+                  <h2 class="text-sm font-medium text-gray-400 mb-3">Nodes by Label</h2>
+                  <div class="space-y-2">
+                    <template x-for="[label, count] in topLabels()" :key="label">
+                      <div class="flex items-center gap-2">
+                        <span class="text-xs w-24 text-gray-300 truncate" x-text="label"></span>
+                        <div class="flex-1 bg-gray-800 rounded-full h-2">
+                          <div class="h-2 rounded-full" :style="`width:${barWidth(count, maxLabelCount())}; background:${labelColor(label).cy}`"></div>
+                        </div>
+                        <span class="text-xs text-gray-400 w-10 text-right font-mono" x-text="count.toLocaleString()"></span>
+                      </div>
+                    </template>
+                  </div>
+                </div>
+                <div class="bg-gray-900 border border-gray-800 rounded-lg p-4">
+                  <h2 class="text-sm font-medium text-gray-400 mb-3">Relationships by Type</h2>
+                  <div class="space-y-2">
+                    <template x-for="[rel, count] in topRels()" :key="rel">
+                      <div class="flex items-center gap-2">
+                        <span class="text-xs w-28 text-gray-300 truncate" x-text="rel"></span>
+                        <div class="flex-1 bg-gray-800 rounded-full h-2">
+                          <div class="h-2 rounded-full bg-blue-500" :style="`width:${barWidth(count, maxRelCount())}`"></div>
+                        </div>
+                        <span class="text-xs text-gray-400 w-10 text-right font-mono" x-text="count.toLocaleString()"></span>
+                      </div>
+                    </template>
+                  </div>
+                </div>
+              </div>
+            </template>
+          </div>
+        </template>
+
+        <button @click="load()" class="mt-4 text-xs text-gray-500 hover:text-gray-300">↻ Refresh</button>
+      </div>
+    </div>
+
+    <!-- ==================== VECTORS ==================== -->
+    <div x-show="$store.app.view === 'vectors'" x-data="vectorsView" x-init="init()">
+      <div class="h-screen flex flex-col">
+        <!-- Controls -->
+        <div class="p-4 border-b border-gray-800 bg-gray-900">
+          <div class="flex flex-wrap gap-2 items-end">
+            <!-- Search -->
+            <div class="flex-1 min-w-48">
+              <div class="flex gap-1">
+                <input
+                  type="text" placeholder="Semantic search…" x-model="searchQuery"
+                  @keydown.enter="search()"
+                  class="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-blue-500"
+                />
+                <button @click="search()" :disabled="searching"
+                  class="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded text-sm disabled:opacity-50">
+                  <span x-show="!searching">Search</span>
+                  <span x-show="searching">…</span>
+                </button>
+                <template x-if="isSearchMode">
+                  <button @click="clearSearch()" class="text-gray-400 hover:text-gray-200 px-2 text-sm">✕</button>
+                </template>
+              </div>
+            </div>
+            <!-- Filters -->
+            <select x-model="language" @change="isSearchMode ? search() : browse()"
+              class="bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-300">
+              <option value="">All languages</option>
+              <option>typescript</option><option>javascript</option><option>tsx</option>
+            </select>
+            <input type="text" placeholder="File path filter" x-model="fileFilter"
+              @keydown.enter="browse()"
+              class="bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-300 placeholder-gray-500 w-48" />
+            <select x-model="searchMode" class="bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-300">
+              <option value="hybrid">hybrid</option>
+              <option value="vector">vector</option>
+              <option value="graph">graph</option>
+            </select>
+          </div>
+          <template x-if="isSearchMode">
+            <div class="mt-1 text-xs text-blue-400">Search results — <span x-text="(searchResults || []).length"></span> found</div>
+          </template>
+          <template x-if="error">
+            <div class="mt-1 text-xs text-red-400" x-text="error"></div>
+          </template>
+        </div>
+
+        <!-- Two-pane body -->
+        <div class="flex-1 flex overflow-hidden">
+          <!-- List -->
+          <div class="w-1/2 border-r border-gray-800 overflow-y-auto">
+            <template x-if="loading">
+              <div class="p-4 space-y-2">
+                <template x-for="i in 8" :key="i">
+                  <div class="skeleton h-14 rounded"></div>
+                </template>
+              </div>
+            </template>
+            <template x-if="!loading && displayList.length === 0">
+              <div class="p-8 text-center text-gray-500 text-sm">No results. Try a different search or filter.</div>
+            </template>
+            <template x-for="item in displayList" :key="item.id">
+              <div
+                @click="selectPoint(item.id, item.payload)"
+                class="p-3 border-b border-gray-800 cursor-pointer hover:bg-gray-900 transition-colors"
+                :class="selectedPoint?.id === item.id ? 'bg-gray-900 border-l-2 border-l-blue-500' : ''"
+              >
+                <div class="text-xs font-mono text-blue-400 truncate" x-text="location(item)"></div>
+                <div class="flex items-center gap-1 mt-1 flex-wrap">
+                  <template x-if="symbol(item)">
+                    <span class="text-xs text-green-400" x-text="symbol(item)"></span>
+                  </template>
+                  <template x-if="(item.payload || item).language">
+                    <span class="text-xs px-1.5 py-0.5 rounded" :class="langBadge((item.payload||item).language)" x-text="(item.payload||item).language"></span>
+                  </template>
+                  <template x-if="(item.payload || item).node_type">
+                    <span class="text-xs px-1.5 py-0.5 rounded bg-gray-700 text-gray-300" x-text="(item.payload||item).node_type"></span>
+                  </template>
+                  <template x-if="item.score">
+                    <span class="text-xs text-yellow-500 ml-auto" x-text="`score: ${item.score.toFixed(3)}`"></span>
+                  </template>
+                </div>
+              </div>
+            </template>
+
+            <!-- Pagination -->
+            <template x-if="!isSearchMode">
+              <div class="p-3 flex gap-2 justify-center border-t border-gray-800">
+                <button @click="prevPage()" :disabled="!prevOffsets.length"
+                  class="text-xs text-gray-400 hover:text-gray-200 disabled:opacity-30 px-3 py-1 border border-gray-700 rounded">← Prev</button>
+                <button @click="nextPage()" :disabled="!nextOffset"
+                  class="text-xs text-gray-400 hover:text-gray-200 disabled:opacity-30 px-3 py-1 border border-gray-700 rounded">Next →</button>
+              </div>
+            </template>
+          </div>
+
+          <!-- Detail panel -->
+          <div class="w-1/2 overflow-y-auto p-4">
+            <template x-if="!selectedPoint">
+              <div class="h-full flex items-center justify-center text-gray-600 text-sm">← Select a chunk to view details</div>
+            </template>
+            <template x-if="selectedPoint">
+              <div x-data="{copied: false}">
+                <div class="mb-3">
+                  <div class="text-xs font-mono text-blue-400 break-all" x-text="selectedPoint.payload?.file_path || selectedPoint.id"></div>
+                  <div class="text-xs text-gray-500 mt-0.5" x-text="`Lines ${selectedPoint.payload?.start_line}–${selectedPoint.payload?.end_line} · ${selectedPoint.payload?.token_count || '?'} tokens`"></div>
+                </div>
+
+                <!-- Code block -->
+                <div class="relative group mb-4">
+                  <button
+                    @click="copyToClipboard(selectedPoint.payload?.text_content || '').then(ok => {copied=ok; setTimeout(()=>copied=false,2000)})"
+                    class="absolute top-2 right-2 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 px-2 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                    x-text="copied ? '✓ Copied' : 'Copy'"
+                  ></button>
+                  <pre><code class="language-typescript" data-highlight x-text="selectedPoint.payload?.text_content || ''"></code></pre>
+                </div>
+
+                <!-- Metadata -->
+                <div class="grid grid-cols-2 gap-2 text-xs">
+                  <template x-if="(selectedPoint.payload?.imports || []).length">
+                    <div class="col-span-2">
+                      <div class="text-gray-500 mb-1">Imports</div>
+                      <div class="flex flex-wrap gap-1">
+                        <template x-for="imp in chipList(selectedPoint.payload.imports)" :key="imp">
+                          <span class="bg-gray-800 text-gray-300 px-1.5 py-0.5 rounded font-mono text-xs" x-text="imp"></span>
+                        </template>
+                      </div>
+                    </div>
+                  </template>
+                  <template x-if="(selectedPoint.payload?.symbols_defined || []).length">
+                    <div class="col-span-2">
+                      <div class="text-gray-500 mb-1">Symbols</div>
+                      <div class="flex flex-wrap gap-1">
+                        <template x-for="sym in chipList(selectedPoint.payload.symbols_defined)" :key="sym">
+                          <span class="bg-blue-900 text-blue-300 px-1.5 py-0.5 rounded font-mono text-xs" x-text="sym"></span>
+                        </template>
+                      </div>
+                    </div>
+                  </template>
+                  <template x-if="(selectedPoint.payload?.call_sites || []).length">
+                    <div class="col-span-2">
+                      <div class="text-gray-500 mb-1">Call Sites</div>
+                      <div class="flex flex-wrap gap-1">
+                        <template x-for="cs in chipList(selectedPoint.payload.call_sites)" :key="cs">
+                          <span class="bg-purple-900 text-purple-300 px-1.5 py-0.5 rounded font-mono text-xs" x-text="cs"></span>
+                        </template>
+                      </div>
+                    </div>
+                  </template>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== GRAPH ==================== -->
+    <div x-show="$store.app.view === 'graph'" x-data="graphView" x-init="init()">
+      <div class="h-screen flex flex-col">
+        <!-- Controls bar -->
+        <div class="p-3 border-b border-gray-800 bg-gray-900 flex flex-wrap gap-2 items-center">
+          <select x-model="selectedLabel" class="bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-300">
+            <template x-for="l in labels" :key="l">
+              <option :value="l" x-text="l"></option>
+            </template>
+          </select>
+          <button @click="loadLabel()" :disabled="loading" class="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded text-sm disabled:opacity-50">
+            Load nodes
+          </button>
+
+          <select x-model.number="depth" class="bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-300">
+            <option value="1">Depth 1</option>
+            <option value="2">Depth 2</option>
+            <option value="3">Depth 3</option>
+          </select>
+
+          <div class="flex-1"></div>
+
+          <button @click="fitGraph()" class="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 px-2 py-1 rounded border border-gray-700">Fit</button>
+          <button @click="clearGraph()" class="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 px-2 py-1 rounded border border-gray-700">Clear</button>
+
+          <template x-if="statusMsg">
+            <span class="text-xs text-blue-400" x-text="statusMsg"></span>
+          </template>
+          <template x-if="error">
+            <span class="text-xs text-red-400" x-text="error"></span>
+          </template>
+        </div>
+
+        <!-- Legend -->
+        <div class="px-3 py-1.5 border-b border-gray-800 bg-gray-900 flex flex-wrap gap-2">
+          <template x-for="l in labels" :key="l">
+            <span class="flex items-center gap-1 text-xs text-gray-400">
+              <span class="inline-block w-2.5 h-2.5 rounded-full" :style="`background:${labelColor(l).cy}`"></span>
+              <span x-text="l"></span>
+            </span>
+          </template>
+        </div>
+
+        <!-- Main area: canvas + inspector + cypher -->
+        <div class="flex-1 flex overflow-hidden">
+          <!-- Canvas -->
+          <div class="flex-1 relative">
+            <div id="cy-canvas" class="absolute inset-0"></div>
+            <div x-show="loading" class="absolute inset-0 flex items-center justify-center bg-gray-950 bg-opacity-60">
+              <div class="text-blue-400 text-sm">Loading…</div>
+            </div>
+            <div class="absolute bottom-2 left-2 text-xs text-gray-600">Double-click a node to expand</div>
+          </div>
+
+          <!-- Right panel: inspector + cypher -->
+          <div class="w-72 border-l border-gray-800 flex flex-col overflow-hidden">
+            <!-- Node inspector -->
+            <div class="p-3 border-b border-gray-800 overflow-y-auto" style="max-height:50%">
+              <h3 class="text-xs font-medium text-gray-400 mb-2">Node Inspector</h3>
+              <template x-if="!selectedNode">
+                <p class="text-xs text-gray-600">Click a node</p>
+              </template>
+              <template x-if="selectedNode">
+                <div>
+                  <div class="flex items-center gap-2 mb-2">
+                    <span class="inline-block w-3 h-3 rounded-full" :style="`background:${labelColor(selectedNode.label).cy}`"></span>
+                    <span class="text-sm font-medium text-gray-200" x-text="selectedNode.label"></span>
+                    <button @click="copyNodeId()" class="ml-auto text-xs text-gray-500 hover:text-gray-300">copy id</button>
+                  </div>
+                  <div class="text-xs font-bold text-blue-400 truncate mb-2" x-text="selectedNode.caption"></div>
+                  <div class="space-y-1">
+                    <template x-for="[k,v] in nodeProps()" :key="k">
+                      <div class="flex gap-1">
+                        <span class="text-gray-500 w-20 flex-shrink-0 text-xs truncate" x-text="k"></span>
+                        <span class="text-gray-300 text-xs break-all" x-text="formatVal(v)"></span>
+                      </div>
+                    </template>
+                  </div>
+                </div>
+              </template>
+            </div>
+
+            <!-- Cypher box -->
+            <div class="flex-1 flex flex-col p-3 overflow-hidden">
+              <h3 class="text-xs font-medium text-gray-400 mb-2">Read-only Cypher</h3>
+              <textarea
+                x-model="cypherQuery"
+                class="flex-1 bg-gray-800 border border-gray-700 rounded p-2 text-xs font-mono text-gray-300 resize-none focus:outline-none focus:border-blue-500"
+                placeholder="MATCH (n:Function) RETURN n LIMIT 25"
+              ></textarea>
+              <div class="flex gap-2 mt-2">
+                <button @click="runCypher()" :disabled="cypherLoading"
+                  class="text-xs bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded disabled:opacity-50">
+                  <span x-show="!cypherLoading">Run</span><span x-show="cypherLoading">…</span>
+                </button>
+                <template x-if="cypherResults?.rows?.length">
+                  <button @click="visualizeCypherResults()"
+                    class="text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 px-3 py-1 rounded">Visualize</button>
+                </template>
+              </div>
+              <template x-if="cypherError">
+                <div class="mt-2 text-xs text-red-400 break-words" x-text="cypherError"></div>
+              </template>
+              <template x-if="cypherResults && !cypherError">
+                <div class="mt-2 overflow-auto" style="max-height:180px">
+                  <table class="text-xs w-full border-collapse">
+                    <thead>
+                      <tr>
+                        <template x-for="col in cypherResults.columns" :key="col">
+                          <th class="text-left text-gray-400 border-b border-gray-700 pb-1 pr-3 font-medium" x-text="col"></th>
+                        </template>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <template x-for="(row, i) in cypherResults.rows.slice(0,50)" :key="i">
+                        <tr class="border-b border-gray-800">
+                          <template x-for="col in cypherResults.columns" :key="col">
+                            <td class="text-gray-300 py-1 pr-3 font-mono truncate max-w-24" x-text="typeof row[col] === 'object' ? (row[col]?.name || row[col]?._labels?.join(':') || JSON.stringify(row[col]).slice(0,30)) : String(row[col] ?? '')"></td>
+                          </template>
+                        </tr>
+                      </template>
+                    </tbody>
+                  </table>
+                  <template x-if="cypherResults.truncated">
+                    <div class="text-xs text-yellow-600 mt-1">Results truncated</div>
+                  </template>
+                </div>
+              </template>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== CHAT ==================== -->
+    <div x-show="$store.app.view === 'chat'" x-data="chatView">
+      <div class="h-screen flex flex-col">
+        <!-- Header -->
+        <div class="p-3 border-b border-gray-800 bg-gray-900 flex items-center gap-3">
+          <span class="text-lg">💬</span>
+          <h1 class="text-sm font-semibold text-gray-200">AI Code Assistant</h1>
+          <span class="text-xs text-gray-500">Powered by Anthropic Claude + MCP</span>
+          <div class="flex-1"></div>
+          <!-- Options toggle -->
+          <button @click="showOptions = !showOptions" class="text-xs text-gray-500 hover:text-gray-300 border border-gray-700 rounded px-2 py-1">Options</button>
+          <button @click="clearChat()" class="text-xs text-gray-500 hover:text-gray-300 border border-gray-700 rounded px-2 py-1">Clear</button>
+        </div>
+
+        <!-- Options bar (collapsible) -->
+        <div x-show="showOptions" class="px-4 py-2 border-b border-gray-800 bg-gray-900 flex gap-4 text-xs text-gray-400 items-center">
+          <label class="flex items-center gap-1">
+            Mode:
+            <select x-model="mode" class="ml-1 bg-gray-800 border border-gray-700 rounded px-2 py-0.5 text-gray-300">
+              <option value="hybrid">hybrid</option>
+              <option value="vector">vector</option>
+              <option value="graph">graph</option>
+            </select>
+          </label>
+          <label class="flex items-center gap-1">
+            Top-K:
+            <input type="number" x-model.number="topK" min="1" max="30"
+              class="ml-1 w-14 bg-gray-800 border border-gray-700 rounded px-2 py-0.5 text-gray-300" />
+          </label>
+        </div>
+
+        <!-- Thread -->
+        <div class="flex-1 overflow-y-auto p-4 space-y-4" x-ref="thread">
+          <!-- Empty state -->
+          <template x-if="messages.length === 0">
+            <div class="flex flex-col items-center justify-center h-full gap-6 text-center">
+              <div class="text-4xl">💬</div>
+              <div>
+                <p class="text-gray-400 text-sm mb-4">Ask anything about the indexed codebase.</p>
+                <div class="flex flex-wrap gap-2 justify-center max-w-lg">
+                  <template x-for="s in suggestions" :key="s">
+                    <button
+                      @click="useSuggestion(s)"
+                      class="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700 rounded-full px-3 py-1.5 text-left"
+                      x-text="s"
+                    ></button>
+                  </template>
+                </div>
+              </div>
+            </div>
+          </template>
+
+          <!-- Messages -->
+          <template x-for="msg in messages" :key="msg.id">
+            <div :class="msg.role === 'user' ? 'flex justify-end' : 'flex justify-start'">
+              <div>
+                <!-- User bubble -->
+                <template x-if="msg.role === 'user'">
+                  <div class="chat-user-msg text-sm" x-text="msg.content"></div>
+                </template>
+
+                <!-- Assistant bubble -->
+                <template x-if="msg.role === 'assistant'">
+                  <div>
+                    <div class="chat-bubble">
+                      <!-- Streaming dots -->
+                      <template x-if="msg.streaming && !msg.content">
+                        <div class="chat-assistant-msg">
+                          <div class="typing-dots"><span></span><span></span><span></span></div>
+                        </div>
+                      </template>
+                      <!-- Rendered markdown or plain text -->
+                      <template x-if="msg.content">
+                        <div class="chat-assistant-msg chat-assistant-msg text-sm">
+                          <template x-if="msg.renderedHtml">
+                            <div x-html="msg.renderedHtml"></div>
+                          </template>
+                          <template x-if="!msg.renderedHtml">
+                            <div class="whitespace-pre-wrap" x-text="msg.content"></div>
+                          </template>
+                          <template x-if="msg.streaming">
+                            <span class="inline-block w-1 h-3 bg-blue-400 ml-0.5 animate-pulse"></span>
+                          </template>
+                        </div>
+                      </template>
+                    </div>
+
+                    <!-- Sources -->
+                    <template x-if="msg.sources && msg.sources.length">
+                      <details class="mt-1 max-w-lg">
+                        <summary class="text-xs text-gray-500 cursor-pointer hover:text-gray-300">
+                          📎 Sources (<span x-text="msg.sources.length"></span>)
+                        </summary>
+                        <div class="mt-1 space-y-1 pl-2 border-l border-gray-700">
+                          <template x-for="(s, i) in msg.sources" :key="i">
+                            <div class="text-xs text-blue-400 font-mono" x-text="locationStr(s)"></div>
+                          </template>
+                        </div>
+                      </details>
+                    </template>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </template>
+
+          <!-- Live status while streaming -->
+          <template x-if="streaming && statusMsg">
+            <div class="flex justify-start">
+              <div class="text-xs text-gray-500 italic" x-text="statusMsg"></div>
+            </div>
+          </template>
+        </div>
+
+        <!-- Error bar -->
+        <template x-if="error">
+          <div class="px-4 py-2 bg-red-900 border-t border-red-800 text-xs text-red-200 flex justify-between">
+            <span x-text="error"></span>
+            <button @click="error=null" class="ml-2 text-red-400 hover:text-red-200">✕</button>
+          </div>
+        </template>
+
+        <!-- Composer -->
+        <div class="p-3 border-t border-gray-800 bg-gray-900">
+          <div class="flex gap-2 items-end">
+            <textarea
+              x-ref="composer"
+              x-model="input"
+              @keydown="onKeydown($event)"
+              placeholder="Ask a question about the codebase… (Enter to send, Shift+Enter for newline)"
+              rows="2"
+              class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 placeholder-gray-500 resize-none focus:outline-none focus:border-blue-500"
+              :disabled="streaming"
+            ></textarea>
+            <template x-if="!streaming">
+              <button
+                @click="send()"
+                :disabled="!input.trim()"
+                class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-40 transition-colors"
+              >Send</button>
+            </template>
+            <template x-if="streaming">
+              <button @click="stop()" class="bg-red-700 hover:bg-red-600 text-white px-4 py-2 rounded-lg text-sm">Stop</button>
+            </template>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- Scripts: non-Alpine libs first (sync), then app.js module, then Alpine last (defer) -->
+<!-- app.js MUST come before alpine.min.js so the alpine:init listener is registered before Alpine fires it -->
+<script src="/static/vendor/highlight.min.js"></script>
+<script src="/static/vendor/marked.min.js"></script>
+<script src="/static/vendor/purify.min.js"></script>
+<script src="/static/vendor/cytoscape.min.js"></script>
+<script type="module" src="/static/js/app.js"></script>
+<script src="/static/vendor/alpine.min.js" defer></script>
+
+<script>
+  // Configure marked
+  if (typeof marked !== 'undefined') {
+    marked.use({
+      gfm: true,
+      breaks: true,
+      renderer: (() => {
+        const r = new marked.Renderer();
+        r.code = (code, lang) => {
+          const language = lang || 'plaintext';
+          return `<pre><code class="language-${language}">${code}</code></pre>`;
+        };
+        return r;
+      })(),
+    });
+  }
+  // Expose copyToClipboard globally for inline Alpine usage
+  window.copyToClipboard = async (text) => {
+    try { await navigator.clipboard.writeText(text); return true; }
+    catch { return false; }
+  };
+</script>
+</body>
+</html>

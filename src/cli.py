@@ -118,6 +118,25 @@ Examples:
     )
 
     parser.add_argument(
+        "--device",
+        type=str,
+        default="auto",
+        choices=["auto", "mps", "cuda", "cpu"],
+        help="Compute device for embeddings (default: auto-detect)",
+    )
+
+    parser.add_argument(
+        "--dtype",
+        type=str,
+        default="auto",
+        choices=["auto", "float16", "bfloat16", "float32"],
+        help=(
+            "Model precision (default: auto). 'auto' uses bfloat16 on Apple "
+            "Silicon/MPS for ~2x throughput and half the memory vs float32."
+        ),
+    )
+
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Run discovery, parsing, chunking without embedding/storing",

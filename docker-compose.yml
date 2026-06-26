@@ -16,6 +16,12 @@ services:
     environment:
       - NEO4J_AUTH=neo4j/testpassword
       - NEO4J_PLUGINS=["apoc"]
+      # Neo4j Community defaults to a tiny heap/pagecache, which throttles bulk
+      # graph writes. Bump them for ingestion throughput. Tune to your machine:
+      # heap ~= working set, pagecache ~= graph size on disk. (override as needed)
+      - NEO4J_server_memory_heap_initial__size=1G
+      - NEO4J_server_memory_heap_max__size=2G
+      - NEO4J_server_memory_pagecache_size=1G
     volumes:
       - ./neo4j_data:/data
     healthcheck:

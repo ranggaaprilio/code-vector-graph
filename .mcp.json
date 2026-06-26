@@ -2,9 +2,9 @@
   "mcpServers": {
     "code-vector-graph": {
       "type": "stdio",
-      "command": "/mnt/67d4d7f3-61de-432a-b22a-136ed1cf1c9b/Code/Python/codeVectorGraph/.venv/bin/python",
+      "command": "/Users/ranggaaprilioutama/Repository/poc/code-vector-graph/.venv/bin/python",
       "args": [
-        "/mnt/67d4d7f3-61de-432a-b22a-136ed1cf1c9b/Code/Python/codeVectorGraph/mcp_server.py"
+        "/Users/ranggaaprilioutama/Repository/poc/code-vector-graph/mcp_server.py"
       ]
     }
   }

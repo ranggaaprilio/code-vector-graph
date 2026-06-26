@@ -195,12 +195,14 @@ class TestMetadataPayload:
             "function_name",
             "total_chunks",
             "text_content",
-            "graph_nodes",
-            "graph_relationships",
         ]
 
         for field in required_fields:
             assert field in payload, f"Missing field: {field}"
+
+        # The full graph is stored in Neo4j, not duplicated into Qdrant payloads.
+        assert "graph_nodes" not in payload
+        assert "graph_relationships" not in payload
 
     def test_payload_values_correct(self, in_memory_store, sample_chunks):
         """Test that payload values match input data."""
@@ -218,8 +220,6 @@ class TestMetadataPayload:
         assert payload["function_name"] == "testFunc"
         assert payload["total_chunks"] == 2
         assert payload["text_content"] == "function testFunc() { return 1; }"
-        assert payload["graph_nodes"] == []
-        assert payload["graph_relationships"] == []
 
     def test_glossary_payload_values(self, in_memory_store):
         in_memory_store.create_collection()

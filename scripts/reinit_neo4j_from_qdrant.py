@@ -286,7 +286,12 @@ def iter_qdrant_points(vector_store: VectorStore, batch_size: int):
 def flush_graph_batch(graph_store: GraphStore, nodes: list[dict[str, Any]],
                       relationships: list[dict[str, Any]]) -> dict[str, int]:
     node_counts = graph_store.upsert_nodes(nodes)
-    relationship_counts = graph_store.upsert_relationships(relationships)
+    node_labels = {
+        n["id"]: n["label"] for n in nodes if n.get("id") and n.get("label")
+    }
+    relationship_counts = graph_store.upsert_relationships(
+        relationships, node_labels=node_labels
+    )
     return {
         "nodes_created": node_counts["nodes_created"],
         "relationships_created": relationship_counts["relationships_created"],

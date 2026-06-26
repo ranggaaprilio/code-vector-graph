@@ -130,7 +130,11 @@ def run_pipeline(args) -> dict:
     manual_glossary_entries = []
 
     if not args.dry_run:
-        embedder = create_embedder(model_id=args.model)
+        embedder = create_embedder(
+            model_id=args.model,
+            device=getattr(args, "device", "auto"),
+            dtype=getattr(args, "dtype", "auto"),
+        )
         store = VectorStore(
             collection_name=collection_name,
             qdrant_url=args.qdrant_url,
@@ -143,6 +147,12 @@ def run_pipeline(args) -> dict:
             sys.exit(1)
         check_qdrant_health(store)
         store.create_collection()
+        # Defer HNSW index construction until all vectors are loaded; rebuilt once
+        # at the end (see end_bulk_load below) instead of after every batch.
+        try:
+            store.begin_bulk_load()
+        except Exception as e:
+            logger.warning(f"Could not defer Qdrant indexing for bulk load: {e}")
 
         if not args.no_graph:
             graph_store = GraphStore(
@@ -305,12 +315,12 @@ def run_pipeline(args) -> dict:
                     chunk_nodes.append(chunk_node)
 
             if graph_data is not None and chunk_nodes:
+                # Chunk nodes go to Neo4j with the rest of the file's graph.
+                # We intentionally do NOT copy the graph into Qdrant payloads:
+                # Neo4j is the source of truth, and duplicating it bloated every
+                # upsert. reinit_neo4j_from_qdrant.py reconstructs the graph from
+                # the flat chunk metadata when the blob is absent.
                 graph_data["nodes"].extend(chunk_nodes)
-                for chunk in chunks:
-                    chunk["graph_nodes"] = []
-                    chunk["graph_relationships"] = []
-                chunks[0]["graph_nodes"] = graph_data["nodes"]
-                chunks[0]["graph_relationships"] = graph_data["relationships"]
 
                 if graph_store:
                     batch_graph_data.append(graph_data)
@@ -363,31 +373,51 @@ def run_pipeline(args) -> dict:
                     logger.info(
                         f"Storing sub-batch {sub_idx + 1}/{total_sub_batches} in Qdrant..."
                     )
-                    point_ids = store.upsert_chunks(embedded_sub)
+                    point_ids = store.upsert_chunks(embedded_sub, wait=False)
                     stats["chunks_stored"] += len(point_ids)
                     logger.info(f"Successfully stored {len(point_ids)} chunks")
 
                 del embedded_sub
                 del sub_batch
-                gc.collect()
-                if torch.backends.mps.is_available():
-                    torch.mps.empty_cache()
-                logger.info(
-                    f"Freed memory after sub-batch {sub_idx + 1}/{total_sub_batches}"
-                )
+
+            # Reclaim memory once per file-batch rather than after every sub-batch.
+            # A per-sub-batch torch.mps.empty_cache() forces a GPU sync that stalls
+            # the pipeline; the MPS allocator reuses cached blocks between sub-batches
+            # so peak memory stays bounded by batch_size either way.
+            gc.collect()
+            if torch.backends.mps.is_available():
+                torch.mps.empty_cache()
+            logger.info("Freed memory after embedding file-batch")
 
         if graph_store and batch_graph_data:
             logger.info(
                 f"Upserting graph data for {len(batch_graph_data)} files to Neo4j..."
             )
+            # Aggregate the whole file-batch into a single upsert_nodes /
+            # upsert_relationships call instead of one transaction per file.
+            # Both methods already chunk internally (BATCH_SIZE) and group by
+            # label/type, so this collapses dozens of round-trips into a few.
+            all_nodes = []
+            all_relationships = []
             for graph_data in batch_graph_data:
-                node_counts = graph_store.upsert_nodes(graph_data["nodes"])
-                relationship_counts = graph_store.upsert_relationships(graph_data["relationships"])
-                stats["nodes_created"] += node_counts["nodes_created"]
-                stats["relationships_created"] += relationship_counts["relationships_created"]
+                all_nodes.extend(graph_data["nodes"])
+                all_relationships.extend(graph_data["relationships"])
 
-            for gd in batch_graph_data:
-                del gd
+            # id -> label map lets upsert_relationships use indexed MATCHes.
+            node_labels = {
+                n["id"]: n["label"]
+                for n in all_nodes
+                if n.get("id") and n.get("label")
+            }
+
+            node_counts = graph_store.upsert_nodes(all_nodes)
+            relationship_counts = graph_store.upsert_relationships(
+                all_relationships, node_labels=node_labels
+            )
+            stats["nodes_created"] += node_counts["nodes_created"]
+            stats["relationships_created"] += relationship_counts["relationships_created"]
+
+            del all_nodes, all_relationships, node_labels
             del batch_graph_data
             gc.collect()
             logger.info("Graph ingestion complete for this batch")
@@ -421,6 +451,13 @@ def run_pipeline(args) -> dict:
         print("=" * 50)
 
         return stats
+
+    # Build the HNSW index now that all vectors are loaded.
+    if store is not None:
+        try:
+            store.end_bulk_load()
+        except Exception as e:
+            logger.warning(f"Could not re-enable Qdrant indexing: {e}")
 
     if graph_store:
         graph_store.close()

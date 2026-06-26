@@ -47,14 +47,20 @@ class Embedder(ABC):
 class HuggingFaceEmbedder(Embedder):
     """HuggingFace embedding implementation using transformers AutoModel/AutoTokenizer."""
 
-    def __init__(self, model: str | None = None, model_id: str | None = None, device: str | None = None):
+    def __init__(
+        self,
+        model: str | None = None,
+        model_id: str | None = None,
+        device: str | None = None,
+        dtype: str | None = None,
+    ):
         self.model_id = model_id or DEFAULT_MODEL_ID
         self.model_config = MODEL_CONFIGS[self.model_id]
         self.model_name = model or self.model_config["model_name"]
         self.prefixes = self.model_config["prefixes"]
         self.dimensions = self.model_config["dimensions"]
 
-        if device:
+        if device and device != "auto":
             self.device = device
         elif torch.backends.mps.is_available():
             self.device = "mps"
@@ -70,18 +76,8 @@ class HuggingFaceEmbedder(Embedder):
             and hasattr(torch.version, "hip")
             and torch.version.hip is not None
         )
-        use_float32 = self.device == "mps" or is_rocm
 
-        dtype_str = self.model_config["dtype"]
-        if use_float32:
-            dtype = torch.float32
-            if is_rocm:
-                logger.info(
-                    "ROCm (AMD GPU) detected - using float32 instead of %s",
-                    dtype_str,
-                )
-        else:
-            dtype = getattr(torch, dtype_str)
+        dtype = self._resolve_dtype(dtype, is_rocm)
         logger.info(f"Using dtype={dtype} for device={self.device}")
 
         try:
@@ -126,6 +122,42 @@ class HuggingFaceEmbedder(Embedder):
             f"Initialized HuggingFaceEmbedder with model={self.model_name}, device={self.device}"
         )
 
+    _VALID_DTYPES = ("float16", "bfloat16", "float32")
+
+    def _resolve_dtype(self, dtype: str | None, is_rocm: bool) -> "torch.dtype":
+        """Resolve the torch dtype to load the model in.
+
+        An explicit dtype (``float16``/``bfloat16``/``float32``) always wins.
+        Otherwise ("auto"/None) we pick a device-appropriate default:
+
+        - MPS (Apple Silicon): ``bfloat16`` — half the memory and roughly 2x the
+          throughput of float32, while keeping float32's exponent range so
+          inference stays numerically safe (no overflow/NaN risk like float16).
+        - ROCm (AMD): ``float32`` — the half-precision path is historically
+          unstable there.
+        - CUDA: the model's configured dtype (float16 for nomic, bfloat16 for jina).
+        - CPU: ``float32`` — half precision on CPU is slow and poorly supported.
+        """
+        if dtype and dtype != "auto":
+            if dtype not in self._VALID_DTYPES:
+                raise ValueError(
+                    f"Unsupported dtype '{dtype}'. Choose one of: "
+                    f"{', '.join(('auto', *self._VALID_DTYPES))}"
+                )
+            return getattr(torch, dtype)
+
+        if is_rocm:
+            logger.info(
+                "ROCm (AMD GPU) detected - using float32 instead of %s",
+                self.model_config["dtype"],
+            )
+            return torch.float32
+        if self.device == "mps":
+            return torch.bfloat16
+        if self.device == "cuda":
+            return getattr(torch, self.model_config["dtype"])
+        return torch.float32
+
     def _prepend_passage_prefix(self, texts: List[str]) -> List[str]:
         """Prepend task-specific passage prefix if configured for the model."""
         if self.prefixes is not None:
@@ -139,17 +171,6 @@ class HuggingFaceEmbedder(Embedder):
             prefix = self.prefixes["nl2code"]["query"]
             return prefix + query
         return query
-
-    def _token_truncation_warnings(self, texts: List[str]) -> int:
-        count = 0
-        for t in texts:
-            try:
-                tokens = self.tokenizer.encode(t, max_length=512, truncation=False)
-                if len(tokens) > 512:
-                    count += 1
-            except (RuntimeError, ValueError, OSError, UnicodeDecodeError):
-                continue
-        return count
 
     def _clear_device_cache(self) -> None:
         if self.device == "mps":
@@ -198,7 +219,11 @@ class HuggingFaceEmbedder(Embedder):
                 if isinstance(v, torch.Tensor):
                     del v
             del inputs
-            self._clear_device_cache()
+            # NOTE: we deliberately do NOT call empty_cache() here. Clearing the
+            # MPS/CUDA cache every batch forces a device sync that stalls the
+            # pipeline; the allocator reuses cached blocks between batches so
+            # peak memory stays bounded. The cache is cleared on the OOM-retry
+            # path (see embed_chunks) and once per file-batch (see main.py).
 
     def embed_chunks(self, chunks: list[dict], batch_size: int = 64) -> list[dict]:
         if not chunks:
@@ -213,37 +238,36 @@ class HuggingFaceEmbedder(Embedder):
 
         texts = self._prepend_passage_prefix(texts)
 
-        logger.info(f"Checking {len(texts)} chunks for token truncation...")
-        truncated_count = self._token_truncation_warnings(texts)
-        if truncated_count:
-            logger.warning(
-                f"Warning: {truncated_count} chunks exceeded 512 tokens and will be truncated"
-            )
-
         total = len(texts)
-        result_chunks: List[dict] = []
+        # Order by length so each batch holds similar-length texts. The tokenizer
+        # pads every batch to its longest sequence, so length-bucketing minimizes
+        # wasted compute on padding. sorted() is stable, so equal-length texts keep
+        # their original relative order. We write results back by original index,
+        # so the returned list matches the input order regardless of processing order.
+        order = sorted(range(total), key=lambda i: len(texts[i]))
+
+        result_chunks: List[dict | None] = [None] * total
         total_batches = (total + batch_size - 1) // batch_size
         logger.info(
-            f"Starting embedding of {total} chunks in {total_batches} batches (batch_size={batch_size})..."
+            f"Starting embedding of {total} chunks in ~{total_batches} batches (batch_size={batch_size})..."
         )
 
         with torch.no_grad():
-            start = 0
+            pos = 0
             batch_idx = 0
             current_batch_size = batch_size
-            while start < total:
-                end = min(start + current_batch_size, total)
-                batch_texts = texts[start:end]
+            while pos < total:
+                end = min(pos + current_batch_size, total)
+                batch_indices = order[pos:end]
+                batch_texts = [texts[i] for i in batch_indices]
                 logger.info(
-                    "Embedding batch %s (%s-%s/%s, %s chunks)...",
+                    "Embedding batch %s (%s/%s chunks done, %s in batch)...",
                     batch_idx + 1,
-                    start + 1,
-                    end,
+                    pos,
                     total,
                     len(batch_texts),
                 )
 
-                logger.debug(f"Running model forward for batch {batch_idx + 1}...")
                 try:
                     embeddings_list = self._embed_text_batch(batch_texts)
                 except RuntimeError as e:
@@ -264,26 +288,24 @@ class HuggingFaceEmbedder(Embedder):
                             "Try reducing --chunk-size or run with CPU."
                         )
                     raise
-                logger.debug(f"Model forward complete for batch {batch_idx + 1}")
 
                 logger.info(
-                    f"Batch {batch_idx + 1}/{total_batches} embedded successfully"
+                    f"Batch {batch_idx + 1}/~{total_batches} embedded successfully"
                 )
 
-                for i, emb in enumerate(embeddings_list):
-                    idx = start + i
+                for emb, idx in zip(embeddings_list, batch_indices):
                     orig = chunks[idx]
                     chunk = (
                         orig.copy()
                         if isinstance(orig, dict)
-                        else {"text": batch_texts[i]}
+                        else {"text": texts[idx]}
                     )
                     chunk["embedding"] = emb
-                    result_chunks.append(chunk)
-                start = end
+                    result_chunks[idx] = chunk
+                pos = end
                 batch_idx += 1
 
-        logger.info(f"Embedding complete: {len(result_chunks)} chunks processed")
+        logger.info(f"Embedding complete: {total} chunks processed")
         return result_chunks
 
     def embed_query(self, query: str) -> list[float]:
@@ -338,3 +360,6 @@ def create_embedder(model_id: str | None = None, **kwargs) -> HuggingFaceEmbedde
         model_id=model_id or DEFAULT_MODEL_ID,
         **kwargs,
     )
+
+
+__all__ = ["Embedder", "HuggingFaceEmbedder", "create_embedder", "JINA_TASK_PREFIXES"]
