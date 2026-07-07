@@ -66,6 +66,21 @@ NEO4J_USER = "neo4j"
 NEO4J_PASSWORD = "testpassword"
 NEO4J_DATABASE = "neo4j"
 
+# DeepSeek configuration (OKF "LLM wiki" enrichment).
+# DeepSeek is OpenAI-compatible, so the `openai` SDK is pointed at this base URL.
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
+DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+
+# Model tiers for OKF enrichment. `flash` is used for leaf/mid concept pages
+# (functions, methods, classes, files); `pro` for module/architecture overviews.
+# Note: the legacy `deepseek-chat`/`deepseek-reasoner` names are discontinued
+# 2026-07-24 — use the v4 names.
+OKF_MODEL_FLASH = os.getenv("OKF_MODEL_FLASH", "deepseek-v4-flash")
+OKF_MODEL_PRO = os.getenv("OKF_MODEL_PRO", "deepseek-v4-pro")
+
+# Default output directory for the generated OKF wiki bundle.
+OKF_OUT_DIR = os.getenv("OKF_OUT_DIR", "okf-wiki")
+
 
 def get_model_config(model_id: str) -> dict:
     """Resolve model config by ID (e.g., 'nomic' or 'jina')."""
