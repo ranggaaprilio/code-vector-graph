@@ -1,6 +1,6 @@
 """Tests for config module."""
 
-from src.config import (
+from code_vector_graph.config import (
     SUPPORTED_EXTENSIONS,
     COMMENT_NODE_TYPES,
     EMBEDDING_DIMENSIONS,
