@@ -1,1 +1,4 @@
 - [Project Pipeline Sort Architecture](project_pipeline_sort_architecture.md) — DetailQueryBuilder sort patterns, existing sortBy keys, modifiedDate/modifiedAt field disambiguation in onebid
+- [Indexed target varies](project_indexed_target_varies.md) — the MCP index may point at an external repo (e.g. white-board), not code-vector-graph itself; check file paths before assuming
+- [white-board app architecture](whiteboard_app_architecture.md) — Liveblocks+Convex+Clerk collaborative canvas: entry chain, layer creation flow, presence/cursor broadcast, key files
+- [onebid HubSpot subscription sync](project_onebid_hubspot_subscription_sync.md) — 3-stage pipeline: webhook ingestion, cron backfill/provisioning, CDC-driven subscriber setup

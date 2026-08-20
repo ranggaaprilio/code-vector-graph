@@ -43,7 +43,13 @@ MODEL_CONFIGS = {
     },
 }
 
-DEFAULT_MODEL_ID = "nomic"
+# Active embedding model, selectable via env (e.g. EMBEDDING_MODEL_ID=jina).
+# Must match one of the keys in MODEL_CONFIGS above.
+DEFAULT_MODEL_ID = os.getenv("EMBEDDING_MODEL_ID", "nomic")
+if DEFAULT_MODEL_ID not in MODEL_CONFIGS:
+    raise ValueError(
+        f"Invalid EMBEDDING_MODEL_ID '{DEFAULT_MODEL_ID}'. Available: {list(MODEL_CONFIGS.keys())}"
+    )
 
 DEFAULT_MODEL = MODEL_CONFIGS[DEFAULT_MODEL_ID]["model_name"]
 EMBEDDING_DIMENSIONS = MODEL_CONFIGS[DEFAULT_MODEL_ID]["dimensions"]

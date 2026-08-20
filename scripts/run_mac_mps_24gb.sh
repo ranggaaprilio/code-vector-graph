@@ -10,9 +10,13 @@ set -euo pipefail
 # Usage:
 #   scripts/run_mac_mps_24gb.sh /path/to/js-or-ts-repo
 #
+# After indexing, it also builds an OKF LLM wiki and syncs it into the SAME Qdrant
+# collection and Neo4j graph (ENABLE_OKF=1 by default; needs DEEPSEEK_API_KEY in .env).
+#
 # Optional overrides:
 #   MODEL=nomic BATCH_SIZE=8 CHUNK_SIZE=320 ENABLE_GRAPH=1 scripts/run_mac_mps_24gb.sh /path/to/repo
 #   DTYPE=float32 scripts/run_mac_mps_24gb.sh /path/to/repo   # force the old precision
+#   ENABLE_OKF=0 scripts/run_mac_mps_24gb.sh /path/to/repo    # skip the OKF wiki step
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -42,6 +46,8 @@ COLLECTION_NAME="${COLLECTION_NAME:-code_chunks_mac_mps_24gb}"
 QDRANT_URL="${QDRANT_URL:-http://localhost:6333}"
 GLOSSARY_FILE="${GLOSSARY_FILE:-glossary.yml}"
 ENABLE_GRAPH="${ENABLE_GRAPH:-1}"
+ENABLE_OKF="${ENABLE_OKF:-1}"          # OKF LLM wiki generation on by default (set 0 to skip)
+OKF_OUT_DIR="${OKF_OUT_DIR:-okf-wiki}" # OKF bundle directory (build output / sync input)
 
 # Let unsupported MPS ops fall back to CPU instead of crashing.
 export PYTORCH_ENABLE_MPS_FALLBACK="${PYTORCH_ENABLE_MPS_FALLBACK:-1}"
@@ -72,7 +78,48 @@ echo "  chunk-size: ${CHUNK_SIZE}"
 echo "  chunk-overlap: ${CHUNK_OVERLAP}"
 echo "  batch-size: ${BATCH_SIZE}"
 echo "  graph: $([[ "${ENABLE_GRAPH}" == "1" ]] && echo enabled || echo disabled)"
+echo "  okf-wiki: $([[ "${ENABLE_OKF}" == "1" ]] && echo "enabled -> ${OKF_OUT_DIR}" || echo disabled)"
 echo
 
 cd "${PROJECT_ROOT}"
-exec "${PYTHON_BIN}" "${ARGS[@]}"
+
+# Index code first. `set -e` aborts here if main.py fails, so the OKF steps below
+# only run after a successful code index. (No `exec`: the shell must live on.)
+"${PYTHON_BIN}" "${ARGS[@]}"
+
+# ---- OKF LLM wiki: enrich the repo and connect it to the SAME Qdrant collection
+# ---- and the SAME Neo4j graph as the code just indexed above.
+if [[ "${ENABLE_OKF}" == "1" ]]; then
+  echo
+  echo "Generating OKF LLM wiki (ENABLE_OKF=1) ..."
+  echo "  bundle:     ${OKF_OUT_DIR}"
+  echo "  collection: ${COLLECTION_NAME} (shared with code; model=${MODEL})"
+
+  # Wiki -> Neo4j only when the code graph was built; otherwise the WikiPage
+  # DOCUMENTS edges would point at code nodes that were never created.
+  OKF_SYNC_ARGS=(
+    "${PROJECT_ROOT}/scripts/sync_okf_wiki.py"
+    --bundle "${OKF_OUT_DIR}"
+    --model "${MODEL}"
+    --collection-name "${COLLECTION_NAME}"
+    --qdrant-url "${QDRANT_URL}"
+    --verbose
+  )
+  if [[ "${ENABLE_GRAPH}" != "1" ]]; then
+    OKF_SYNC_ARGS+=(--no-neo4j)
+  fi
+
+  # Phase 1 build (DeepSeek enrichment; reads DEEPSEEK_API_KEY from .env), then
+  # Phase 2 sync. Guarded by `if` so a failure warns but does NOT undo the
+  # already-successful code index (errexit is suspended inside an `if` condition).
+  if "${PYTHON_BIN}" "${PROJECT_ROOT}/scripts/build_okf_wiki.py" \
+        --repo-path "${REPO_PATH}" --out-dir "${OKF_OUT_DIR}" --verbose \
+     && "${PYTHON_BIN}" "${OKF_SYNC_ARGS[@]}"; then
+    echo "OKF wiki generated and synced (Qdrant collection '${COLLECTION_NAME}_...' + Neo4j)."
+  else
+    echo "WARNING: OKF wiki step failed; code index is unaffected." >&2
+  fi
+else
+  echo
+  echo "Skipping OKF wiki (set ENABLE_OKF=1 to enable)."
+fi
