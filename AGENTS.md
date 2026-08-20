@@ -1,225 +1,126 @@
-# codeVectorGraph - AGENTS.md
+# AGENTS.md — code-vector-graph
 
-**Generated:** 2025-01-09
-**Language:** Python 3.10+
-**Stack:** Tree-sitter, LangChain, Qdrant, Ollama/HuggingFace
+Orientation for agents working in this repo. Human documentation lives in
+[docs/](docs/README.md); this file covers only what an agent needs to work here
+correctly.
 
-## MAIN RULE (MOST IMPORTANT)
+## What this is
 
-Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
+A Python tool that indexes JS/TS repositories into Qdrant (vector embeddings)
+and Neo4j (a code ontology), then serves retrieval over MCP, a CLI, and a web
+dashboard. Tree-sitter does the parsing; embedding models run locally.
 
-Tradeoff: These guidelines bias toward caution over speed. For trivial tasks, use judgment.
+## Structure
 
-1. Think Before Coding
-Don't assume. Don't hide confusion. Surface tradeoffs.
-
-Before implementing:
-
-State your assumptions explicitly. If uncertain, ask.
-If multiple interpretations exist, present them - don't pick silently.
-If a simpler approach exists, say so. Push back when warranted.
-If something is unclear, stop. Name what's confusing. Ask.
-2. Simplicity First
-Minimum code that solves the problem. Nothing speculative.
-
-No features beyond what was asked.
-No abstractions for single-use code.
-No "flexibility" or "configurability" that wasn't requested.
-No error handling for impossible scenarios.
-If you write 200 lines and it could be 50, rewrite it.
-Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
-
-3. Surgical Changes
-Touch only what you must. Clean up only your own mess.
-
-When editing existing code:
-
-Don't "improve" adjacent code, comments, or formatting.
-Don't refactor things that aren't broken.
-Match existing style, even if you'd do it differently.
-If you notice unrelated dead code, mention it - don't delete it.
-When your changes create orphans:
-
-Remove imports/variables/functions that YOUR changes made unused.
-Don't remove pre-existing dead code unless asked.
-The test: Every changed line should trace directly to the user's request.
-
-4. Goal-Driven Execution
-Define success criteria. Loop until verified.
-
-Transform tasks into verifiable goals:
-
-"Add validation" → "Write tests for invalid inputs, then make them pass"
-"Fix the bug" → "Write a test that reproduces it, then make it pass"
-"Refactor X" → "Ensure tests pass before and after"
-For multi-step tasks, state a brief plan:
-
-1. [Step] → verify: [check]
-2. [Step] → verify: [check]
-3. [Step] → verify: [check]
-Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
-
-These guidelines are working if: fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
-
-## OVERVIEW
-
-CLI tool that transforms JS/TS code repositories into searchable vector embeddings. Pipeline: Scan → Parse (Tree-sitter) → Chunk (BERT tokenizer) → Embed (Ollama/HF) → Store (Qdrant).
-
-## STRUCTURE
+Organised by **role**, one package per concern. Full annotated tree in
+[docs/project-structure.md](docs/project-structure.md).
 
 ```
-.
-├── main.py                 # CLI entry point, pipeline orchestration
-├── src/                    # Core modules (see src/AGENTS.md)
-├── tests/                  # Test suite (see tests/AGENTS.md)
-├── docker-compose.yml      # Qdrant service only
-├── requirements.txt        # Dependencies (no pyproject.toml)
-└── .sisyphus/             # OpenCode workflow state (gitignored)
+src/code_vector_graph/
+├── config.py          settings (models, chunking, stores, DeepSeek/OKF)
+├── logging_setup.py   setup_logging()
+├── parsing/           scanner, parser, chunker, graph_extractor, glossary
+├── embeddings/        embedder, download
+├── stores/            vector_store (Qdrant), graph_store (Neo4j), graph_schema
+├── retrieval/         hybrid (RRF fusion)
+├── ingestion/         pipeline, reinit_graph, okf/
+├── mcp_server/        server (MCP tools)
+├── api/               FastAPI dashboard + static SPA
+└── cli/               console-script entry points
 ```
 
-## WHERE TO LOOK
+## Where to look
 
-| Task | Location | Notes |
-|------|----------|-------|
-| CLI args | `src/cli.py` | argparse with validation |
-| Config | `src/config.py` | Hardcoded constants, providers |
-| File discovery | `src/scanner.py` | SKIP_DIRS = node_modules, .git, etc. |
-| Parsing | `src/parser.py` | Tree-sitter, comment stripping |
-| Chunking | `src/chunker.py` | BERT tokenizer, sliding window |
-| Embedding | `src/embedder.py` | Ollama/HuggingFace backends |
-| Storage | `src/store.py` | Qdrant with deterministic UUID5 |
-| Pipeline | `main.py` | Batch processing (FILE_BATCH_SIZE=50) |
+| Task | Start here |
+|---|---|
+| Change how files are found/skipped | `parsing/scanner.py` |
+| Change AST metadata or comment stripping | `parsing/parser.py` |
+| Change chunk boundaries or token counting | `parsing/chunker.py` |
+| Change what lands in Neo4j | `parsing/graph_extractor.py`, `stores/graph_schema.py` |
+| Change Qdrant payloads or ids | `stores/vector_store.py` |
+| Change search ranking | `retrieval/hybrid.py` |
+| Add/modify an MCP tool | `mcp_server/server.py` |
+| Add a dashboard endpoint | `api/routers/`, `api/schemas.py` |
+| Add a CLI flag | `cli/<command>.py` |
+| Add a setting | `config.py` (+ document it in `.env.example`) |
 
-## CONVENTIONS
+## Conventions
 
-**Dependencies:** `requirements.txt` only. No `pyproject.toml` or `setup.py`.
+**Dependencies:** `pyproject.toml`. Role-scoped extras (`ingest`, `serve`,
+`query`, `mcp`, `dev`) — put a dependency in the extra that actually needs it
+rather than the base set. `requirements.txt` is a compatibility shim pointing at
+`-e .[...]`; don't add packages there.
 
-**Imports:** Use `from src.module import function` pattern.
+**Install:** `pip install -e ".[ingest,serve,query,mcp,dev]"`.
 
-**Logging:** Use `logger = logging.getLogger(__name__)`.
+**Imports:** absolute, from the package root —
+`from code_vector_graph.parsing.parser import parse_file`. No relative imports,
+no `sys.path` manipulation, and never import by bare module name.
 
-**CLI Pattern:**
+**Entry points:** every user-facing command is a console script declared in
+`pyproject.toml` and implemented under `cli/`. Don't add runnable scripts at the
+repo root. Entry modules must call `load_dotenv()` **before** importing
+`config`, which reads the environment at import time.
+
+**Logging:** `logger = logging.getLogger(__name__)`; configure via
+`logging_setup.setup_logging(verbose)`.
+
+**CLI pattern:**
 ```python
 args = parse_args()
 setup_logging(args.verbose)
 run_pipeline(args)
 ```
 
-**Error Handling:**
-- Health checks fail fast with `sys.exit(1)` and helpful messages
-- Validation happens in `parse_args()` using `parser.error()`
+**Error handling:** health checks fail fast with `sys.exit(1)` and an actionable
+message; argument validation goes through `parser.error()` in `parse_args()`.
 
-## ANTI-PATTERNS (EXPLICITLY FORBIDDEN)
+**Tests:** mirror the package layout. Resolve paths via `tests/conftest.py`
+(`FIXTURES_DIR`, `PROJECT_ROOT`) — never a cwd-relative literal. Anything that
+downloads a real model or needs live services belongs in `tests/manual/`, which
+is excluded from the default run.
 
-| Pattern | Why | Location |
-|---------|-----|----------|
-| Global state | Causes race conditions in parallel processing | `_LAST_SOURCE_BYTES` in parser.py |
-| Bare `except Exception` | Masks specific errors | parser.py lines 222-224 |
-| Chunks >512 tokens | Will be truncated, data loss | embedder.py warns |
-| Hardcoded HF token | Security risk | config.py line 43 |
+## Anti-patterns
 
-## CRITICAL BUGS TO FIX
+| Pattern | Why |
+|---|---|
+| Module-level mutable global state | Breaks under batching and parallel processing |
+| Bare `except Exception` around control flow | Masks real errors; catch specific exceptions |
+| Chunks over the model's token limit | Silently truncated — data loss; `embeddings/embedder.py` warns |
+| Secrets in source | Everything goes through `os.getenv` + `.env.example` |
+| Re-implementing retrieval per surface | The dashboard routes through the MCP tools on purpose; keep one read path |
+| cwd-relative paths in library code | Breaks the installed package; resolve from `__file__` or config |
 
-1. **Parser global state bug** - `_LAST_SOURCE_BYTES` must be removed per IMPLEMENTATION_GUIDE.md Phase 0
-2. **Bare exception handling** - Use specific exceptions: `(ValueError, RuntimeError, OSError, UnicodeDecodeError)`
-
-## SUPPORTED FILE TYPES
-
-```python
-SUPPORTED_EXTENSIONS = {
-    ".js", ".jsx", ".mjs", ".cjs",
-    ".ts", ".tsx", ".mts", ".cts"
-}
-```
-
-## EMBEDDING PROVIDERS
-
-| Provider | Model | Dimensions | Prefix |
-|----------|-------|------------|--------|
-| Ollama | nomic-embed-text:latest | 768 | `search_document: ` |
-| HuggingFace | nomic-ai/nomic-embed-code | 3584 | (none) |
-
-## COMMANDS
+## Commands
 
 ```bash
 # Setup
-pip install -r requirements.txt
+python -m venv .venv && source .venv/bin/activate
+pip install -e ".[ingest,serve,query,mcp,dev]"
 docker-compose up -d
-ollama pull nomic-embed-text:latest
 
 # Run
-python main.py --repo-path /path/to/repo
-python main.py --repo-path /path/to/repo --dry-run --verbose
+cvg-ingest --repo-path /path/to/repo --verbose
+cvg-ingest --repo-path /path/to/repo --dry-run     # no embeddings, no writes
+cvg-query --question "..." --retrieval hybrid
+cvg-serve
+cvg-mcp
 
 # Test
-python -m pytest tests/ -v
-python -m pytest tests/ --cov=src --cov-report=term-missing
+pytest
+pytest --cov=code_vector_graph --cov-report=term-missing
 ```
 
-## NOTES
+## Notes
 
-- **No CI/CD** - Manual execution only
-- **No Makefile** - Use `python main.py` directly
-- **Docker only for Qdrant** - No containerized app build
-- **`.sisyphus/`** - OpenCode workflow state, internal tooling
-- **Chunking**: 512 tokens with 64 overlap, line-based (never mid-line)
-- **Memory control**: Files processed in batches of 50
-- **Trust Remote Code**: HuggingFace uses `trust_remote_code=True` - only use trusted models
-
----
-
-## CROSS-IDE AGENT COMPATIBILITY
-
-This project supports both **Claude Code** and **OpenCode** IDEs with compatible agent definitions.
-
-### Available Agents
-
-| Agent | Claude Code | OpenCode | Purpose |
-|-------|-------------|----------|---------|
-| `code-graph-explorer` | `.claude/agents/code-graph-explorer.md` | Built-in + `.opencode/agents/code-graph-explorer.md` | Codebase exploration via MCP |
-
-### Using Agents
-
-**OpenCode:**
-```python
-task(
-    subagent_type="code-graph-explorer",
-    load_skills=[],
-    prompt="[Context]\n[Goal]\n[Request]",
-    run_in_background=False
-)
-```
-
-**Claude Code:**
-```
-/agent code-graph-explorer
-[Your question about code structure or flow]
-```
-
-### Directory Structure
-
-```
-.
-├── .claude/
-│   ├── agents/
-│   │   └── code-graph-explorer.md    # Claude-specific agent definition
-│   └── settings.json                  # Claude settings (empty)
-├── .opencode/
-│   ├── agents/
-│   │   └── code-graph-explorer.md    # OpenCode agent documentation
-│   └── settings.json                  # OpenCode settings + MCP config
-└── AGENTS.md                          # This file
-```
-
-### Agent Capabilities
-
-All agents use the **code-vector-graph MCP** for:
-- Vector similarity search across code
-- Graph relationship traversal (Neo4j)
-- Hybrid search combining both approaches
-
-**Tools available:**
-- `code-vector-graph_search_code` - Semantic code search
-- `code-vector-graph_check_health` - Service health checks
-
-See individual agent definitions for detailed usage examples.
+- **Switching embedding models requires re-indexing** — the Qdrant collection
+  name embeds the model name and dimension count, so `nomic` and `jina` data
+  never mix.
+- **Neo4j is the source of truth for the graph.** Qdrant payloads deliberately
+  carry flat chunk metadata rather than a copy of the graph; `cvg-reinit-graph`
+  reconstructs the graph from those payloads.
+- **Tree-sitter is error-tolerant**: `parse_file()` returns a tree containing
+  ERROR nodes for invalid syntax rather than failing. See the known-failing test
+  noted in [docs/testing.md](docs/testing.md).
+- Dashboard static assets ship as package data, so the SPA works from an
+  installed wheel — reference them relative to `__file__`, not the repo root.

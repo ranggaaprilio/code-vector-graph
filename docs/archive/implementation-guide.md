@@ -1,3 +1,12 @@
+> **Historical document — not current instructions.**
+>
+> This was the phase-by-phase guide used to build the metadata, chunking, storage
+> and pipeline layers. That work has shipped. File paths and line numbers here
+> predate the restructure into the `code_vector_graph` package, so they no longer
+> resolve — see [Project Structure](../project-structure.md) for the current
+> layout. Kept for the design rationale behind the AST metadata and chunking
+> decisions.
+
 # Code Vector Graph - Implementation Guide
 
 ## Overview
