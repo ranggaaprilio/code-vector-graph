@@ -43,7 +43,13 @@ MODEL_CONFIGS = {
     },
 }
 
-DEFAULT_MODEL_ID = "nomic"
+# Active embedding model, selectable via env (e.g. EMBEDDING_MODEL_ID=jina).
+# Must match one of the keys in MODEL_CONFIGS above.
+DEFAULT_MODEL_ID = os.getenv("EMBEDDING_MODEL_ID", "nomic")
+if DEFAULT_MODEL_ID not in MODEL_CONFIGS:
+    raise ValueError(
+        f"Invalid EMBEDDING_MODEL_ID '{DEFAULT_MODEL_ID}'. Available: {list(MODEL_CONFIGS.keys())}"
+    )
 
 DEFAULT_MODEL = MODEL_CONFIGS[DEFAULT_MODEL_ID]["model_name"]
 EMBEDDING_DIMENSIONS = MODEL_CONFIGS[DEFAULT_MODEL_ID]["dimensions"]
@@ -65,6 +71,21 @@ NEO4J_URI = "bolt://localhost:7687"
 NEO4J_USER = "neo4j"
 NEO4J_PASSWORD = "testpassword"
 NEO4J_DATABASE = "neo4j"
+
+# DeepSeek configuration (OKF "LLM wiki" enrichment).
+# DeepSeek is OpenAI-compatible, so the `openai` SDK is pointed at this base URL.
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
+DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+
+# Model tiers for OKF enrichment. `flash` is used for leaf/mid concept pages
+# (functions, methods, classes, files); `pro` for module/architecture overviews.
+# Note: the legacy `deepseek-chat`/`deepseek-reasoner` names are discontinued
+# 2026-07-24 — use the v4 names.
+OKF_MODEL_FLASH = os.getenv("OKF_MODEL_FLASH", "deepseek-v4-flash")
+OKF_MODEL_PRO = os.getenv("OKF_MODEL_PRO", "deepseek-v4-pro")
+
+# Default output directory for the generated OKF wiki bundle.
+OKF_OUT_DIR = os.getenv("OKF_OUT_DIR", "okf-wiki")
 
 
 def get_model_config(model_id: str) -> dict:

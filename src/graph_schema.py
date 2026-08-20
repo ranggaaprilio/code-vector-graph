@@ -23,6 +23,7 @@ NODE_LABELS = frozenset([
     "TypeAlias",
     "Chunk",
     "GlossaryEntry",
+    "WikiPage",
 ])
 
 # Relationship types for the code ontology
@@ -37,6 +38,7 @@ RELATIONSHIP_TYPES = frozenset([
     "TYPE_OF",
     "DEPENDS_ON",
     "HAS_GLOSSARY",
+    "DOCUMENTS",
 ])
 
 # Node property schemas keyed by label
@@ -157,6 +159,20 @@ NODE_PROPERTIES = {
         "symbol_id": str,
         "created_at": str,
         "updated_at": str,
+    },
+    # OKF "LLM wiki" page. Documents a code node (concept_id) with enriched,
+    # human-readable content; linked to that node via a DOCUMENTS relationship
+    # and to other wiki pages via REFERENCES.
+    "WikiPage": {
+        "concept_id": str,
+        "path": str,
+        "type": str,
+        "title": str,
+        "summary": str,
+        "overview": str,
+        "tags": list[str],
+        "resource": str,
+        "source": str,
     },
 }
 

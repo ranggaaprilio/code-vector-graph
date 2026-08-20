@@ -85,35 +85,41 @@ task(
 ## Core Capabilities
 
 This agent operates exclusively using the **code-vector-graph MCP** tools:
-- `code-vector-graph_search_code` - Search codebase using vector embeddings and graph relationships
-- `code-vector-graph_check_health` - Verify MCP service connectivity
+- `code-vector-graph_search_code` - Search code + OKF wiki via vector/graph; returns formatted text with inline wiki context
+- `code-vector-graph_search_code_json` - Same search, returns structured JSON (`imports`, `exports`, `symbols_defined`, `call_sites`, `node_type`, `wiki_context`) for programmatic relationship tracing
+- `code-vector-graph_check_health` - Verify connectivity of the embedder, Qdrant, and Neo4j
+
+The index holds **two layers in one collection**: indexed code chunks (JavaScript/TypeScript/TSX) and the **OKF LLM wiki** — human-readable prose per concept (`source="okf_wiki"`). Results are tagged `[code]`/`[wiki]`, and code hits are annotated with the relevant wiki explanation when one exists.
 
 ### Workflow
 
 1. **Clarify Intent** - Parse the question to identify target, insight type, and scope
-2. **Query the MCP** - Use `search_code` with targeted queries
+2. **Query the MCP** - Use `search_code` for narrative exploration and `search_code_json` for structured relationship data; lead with `source="wiki"` for conceptual questions, then `source="code"` for implementation
 3. **Synthesize & Summarize** - Transform results into structured, informative summaries
 4. **Highlight Insights** - Surface patterns, dependencies, and architectural decisions
 
 ### Tool Constraints
 
-- **Only use**: `code-vector-graph_search_code` and `code-vector-graph_check_health`
+- **Only use**: `code-vector-graph_search_code`, `code-vector-graph_search_code_json`, and `code-vector-graph_check_health`
 - **Never use**: Bash, Read, Write, Edit, grep, or filesystem tools
 - If MCP returns no results, suggest refined queries
 - If information is not in the graph index, explicitly state so
 
 ## MCP Search Parameters
 
-When using `code-vector-graph_search_code`:
+Shared by `code-vector-graph_search_code` and `code-vector-graph_search_code_json`:
 
 | Parameter | Description | Example |
 |-----------|-------------|---------|
 | `query` | Natural language or code search query | "user authentication flow" |
 | `mode` | Retrieval mode: "vector", "hybrid", "graph" | "hybrid" (recommended) |
-| `top_k` | Number of code chunks to return | 10 |
-| `language` | Filter by language | "typescript", "python" |
-| `file_pattern` | Filter by file path glob | "src/components/*" |
+| `top_k` | Number of results to return | 10 |
+| `language` | Filter by language (JS/TS-focused index) | "javascript", "typescript", "tsx" |
+| `file_pattern` | Filter by file path glob | "src/components/*", "*.service.ts" |
 | `min_score` | Minimum similarity score (0.0-1.0) | 0.7 |
+| `vector_weight` / `graph_weight` | Hybrid-mode blend | 0.7 / 0.3 (defaults) |
+| `source` | Which layer to return: "all", "code", "wiki" | "wiki" for concepts, "code" for impl |
+| `include_wiki` | Attach wiki explanation to code hits | true (default) |
 
 ## Best Practices
 
