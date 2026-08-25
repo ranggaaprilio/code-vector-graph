@@ -2,7 +2,34 @@
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+from pydantic.fields import FieldInfo
+
+
+def _keeps_none(field: FieldInfo | None) -> bool:
+    """True when ``None`` is the field's own default (an unknown key is passed through
+    so validation still reports it) — anything else has a real default to fall back on."""
+    if field is None:
+        return True
+    return field.default is None and field.default_factory is None
+
+
+class _MCPItem(BaseModel):
+    """Base for models built straight from an MCP tool's JSON items.
+
+    The wiki layer sends an explicit ``null`` where the code layer sends a list
+    or a string (``imports``, ``file_path``, …). A field default only applies to
+    a *missing* key, so those nulls would fail validation against the declared
+    ``list[str]`` / ``str``. Drop them and let the defaults fill in.
+    """
+
+    @model_validator(mode="before")
+    @classmethod
+    def _drop_nulls(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        fields = cls.model_fields
+        return {k: v for k, v in data.items() if v is not None or _keeps_none(fields.get(k))}
 
 
 # --- Chat ---
@@ -22,7 +49,7 @@ class ChatRequest(BaseModel):
     options: dict[str, Any] | None = None
 
 
-class SourceItem(BaseModel):
+class SourceItem(_MCPItem):
     file_path: str = ""
     start_line: int | None = None
     end_line: int | None = None
@@ -61,7 +88,7 @@ class SearchRequest(BaseModel):
     repo: str | None = None
 
 
-class SearchResult(BaseModel):
+class SearchResult(_MCPItem):
     id: str
     score: float
     # Graph-mode hits (and wiki pages) may carry no file_path/language.

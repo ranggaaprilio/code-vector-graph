@@ -1,0 +1,55 @@
+<script lang="ts">
+	import { fly } from 'svelte/transition';
+	import { MediaQuery } from 'svelte/reactivity';
+
+	let { message = '', onDismiss }: { message?: string; onDismiss?: () => void } = $props();
+
+	const reduced = new MediaQuery('(prefers-reduced-motion: reduce)');
+	const duration = $derived(reduced.current ? 0 : 160);
+</script>
+
+{#if message}
+	<div class="toast-slot" role="status" aria-live="polite">
+		<button
+			type="button"
+			class="toast ds-body-sm"
+			onclick={onDismiss}
+			transition:fly={{ y: 8, duration }}
+		>
+			{message}
+		</button>
+	</div>
+{/if}
+
+<style>
+	.toast-slot {
+		position: fixed;
+		bottom: var(--space-xl);
+		left: 50%;
+		transform: translateX(-50%);
+		z-index: 50;
+	}
+
+	.toast {
+		background: var(--color-canvas);
+		border: var(--border-hairline);
+		box-shadow: var(--bevel-hard);
+		padding: var(--space-s) var(--space-lg);
+		cursor: pointer;
+		font-family: var(--font-body);
+		color: var(--color-ink);
+		transition:
+			background-color var(--motion-fast) var(--ease-snap),
+			translate var(--motion-fast) var(--ease-snap),
+			box-shadow var(--motion-fast) var(--ease-snap);
+	}
+
+	.toast:hover {
+		background: var(--color-row-hover);
+	}
+
+	.toast:active {
+		translate: 2px 2px;
+		box-shadow: none;
+	}
+</style>

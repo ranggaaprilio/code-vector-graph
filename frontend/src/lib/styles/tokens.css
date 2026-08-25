@@ -1,0 +1,174 @@
+/*
+ * Design tokens — "Dell December 1996 catalog" system (see /Design.md).
+ * Closed palette, no gradients, no soft shadows, zero radius except
+ * rounded.full on decorative seals. No dark-mode variant is defined —
+ * Design.md documents a single fixed light theme.
+ *
+ * ---------------------------------------------------------------------------
+ * RETRO-MODERN PASS — three deliberate deviations from Design.md.
+ * These are choices, not oversights. Do not "fix" them back.
+ *
+ * 1. Interaction states exist (hover / active / focus-visible).
+ *    Design.md:148 says "No hover states documented. Per the global no-hover
+ *    policy." That is an archaeological note about a *static 1996 page*, not a
+ *    spec for an app with clickable cards, tabs and a Stop-streaming button.
+ *    An affordance that lies is the opposite of good design. Every state here
+ *    is derived from the closed palette via color-mix() — no new hue, no soft
+ *    shadow — so Design.md:280 ("the palette is closed by design") still holds.
+ *
+ * 2. Body copy is 15px / lh 1.55 with a 68ch measure (was 14 / 1.4).
+ *    The *face* stays Times New Roman, so the catalog feel Design.md:275
+ *    protects is intact. Only the calibration moves: 14/1.4 was tuned for an
+ *    800x600 CRT, not for today's pixel density and window widths.
+ *
+ * 3. Display type carries -0.01em tracking at >=28px.
+ *    Design.md:70 forbids tracking because "pixel-fonts in 1996 didn't reward
+ *    it" — a reason that no longer applies under subpixel rendering, where
+ *    Arial Black at 36px reads loose without it.
+ * ---------------------------------------------------------------------------
+ */
+
+:root {
+	/* ---- Brand & accent -------------------------------------------------- */
+	--color-primary: #e91d2a; /* Dell red — cta-block-red + status readout ONLY */
+	--color-on-primary: #ffffff;
+	--color-yellow-sticker: #fcc20f;
+	--color-purple-stripe: #6a26a4;
+
+	/* ---- Surface ----------------------------------------------------------*/
+	--color-frame-ink: #000000;
+	--color-canvas: #ffffff;
+
+	/* ---- Text ---------------------------------------------------------- */
+	--color-ink: #000000;
+	--color-link: #0000ee;
+
+	/* ---- Ribbon-card tint family (closed, 8 colors) ---------------------- */
+	--tint-olive: #8e8a25;
+	--tint-sage: #b3bd95;
+	--tint-salmon: #d77a7a;
+	--tint-peach: #e6915d;
+	--tint-lime: #c0d4a7;
+	--tint-sky: #9ab6c8;
+	--tint-steel: #a5b8c0;
+	--tint-periwinkle: #8c9ae0;
+
+	/* ---- Derived neutrals ------------------------------------------------ */
+	/* Every value below is mixed from the closed palette above — nothing new. */
+	--color-ink-muted: color-mix(in oklab, var(--color-ink) 68%, var(--color-canvas));
+	--color-ink-faint: color-mix(in oklab, var(--color-ink) 45%, var(--color-canvas));
+	--color-on-ink-muted: color-mix(in oklab, var(--color-canvas) 60%, var(--color-frame-ink));
+	--color-skeleton: color-mix(in oklab, var(--color-canvas) 82%, var(--color-ink));
+	--color-row-zebra: color-mix(in oklab, var(--color-canvas) 96%, var(--color-ink));
+	--color-row-hover: color-mix(in oklab, var(--color-canvas) 91%, var(--color-ink));
+	/* Chrome background — the surface the page-frame sits on. */
+	--color-page-backdrop: color-mix(in oklab, var(--color-canvas) 85%, var(--color-ink));
+
+	/* ---- Derived tint hover states --------------------------------------- */
+	/* Same hue, pushed 12% toward ink: reads as "lit up" without a new color. */
+	--tint-olive-hover: color-mix(in oklab, var(--tint-olive) 88%, var(--color-frame-ink));
+	--tint-sage-hover: color-mix(in oklab, var(--tint-sage) 88%, var(--color-frame-ink));
+	--tint-salmon-hover: color-mix(in oklab, var(--tint-salmon) 88%, var(--color-frame-ink));
+	--tint-peach-hover: color-mix(in oklab, var(--tint-peach) 88%, var(--color-frame-ink));
+	--tint-lime-hover: color-mix(in oklab, var(--tint-lime) 88%, var(--color-frame-ink));
+	--tint-sky-hover: color-mix(in oklab, var(--tint-sky) 88%, var(--color-frame-ink));
+	--tint-steel-hover: color-mix(in oklab, var(--tint-steel) 88%, var(--color-frame-ink));
+	--tint-periwinkle-hover: color-mix(in oklab, var(--tint-periwinkle) 88%, var(--color-frame-ink));
+
+	/* ---- Typography -------------------------------------------------------*/
+	--font-display: 'Arial Black', Helvetica, Arial, system-ui, sans-serif;
+	--font-heading: Helvetica, Arial, system-ui, sans-serif;
+	--font-body: 'Times New Roman', Times, serif;
+	--font-mono:
+		ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+
+	/* Display sizes are fluid so components never hardcode a breakpoint size. */
+	--type-display-size: clamp(24px, 4.5vw, 36px);
+	--type-display-weight: 900;
+	--type-display-lh: 1;
+	--type-display-tracking: -0.01em; /* deviation 3 */
+
+	--type-h1-size: clamp(18px, 2.4vw, 24px);
+	--type-h1-weight: 900;
+	--type-h1-lh: 1.05;
+
+	--type-brand-size: clamp(16px, 2vw, 22px);
+
+	--type-h2-size: 16px;
+	--type-h2-weight: 700;
+	--type-h2-lh: 1.2;
+
+	--type-h3-size: 14px;
+	--type-h3-weight: 700;
+	--type-h3-lh: 1.2;
+
+	/* deviation 2 — face unchanged, calibration modernised */
+	--type-body-size: 15px;
+	--type-body-weight: 400;
+	--type-body-lh: 1.55;
+
+	--type-body-sm-size: 13px;
+	--type-body-sm-lh: 1.45;
+
+	--type-caption-size: 11px;
+	--type-caption-lh: 1.35;
+
+	--type-button-size: 12px;
+	--type-button-weight: 700;
+
+	--type-ui-label-size: 12px;
+	--type-ui-label-weight: 700;
+
+	/* Comfortable reading measure for prose (markdown, wiki, chat answers). */
+	--measure: 68ch;
+
+	/* ---- Spacing (4px base, 2/6/10 intermediates) -------------------------*/
+	--space-xxs: 2px;
+	--space-xs: 4px;
+	--space-s: 6px;
+	--space-sm: 8px;
+	--space-m: 10px;
+	--space-md: 12px;
+	--space-lg: 16px;
+	--space-xl: 20px;
+	--space-xxl: 24px;
+	--space-section-sm: 32px;
+	--space-section: 40px;
+	--space-section-lg: 48px;
+
+	/* ---- Radius -------------------------------------------------------- */
+	--radius-none: 0px;
+	--radius-full: 9999px;
+
+	/* ---- Borders / elevation ---------------------------------------------*/
+	--border-hairline: 1px solid var(--color-frame-ink);
+	--border-hairline-strong: 2px solid var(--color-frame-ink);
+	--frame-width: 8px;
+	--frame-width-tablet: 4px;
+	--frame-width-mobile: 2px;
+	/* Level 3 in Design.md's depth table: a hard offset, never a blur. */
+	--bevel-hard: 2px 2px 0 var(--color-frame-ink);
+
+	/* ---- Focus ----------------------------------------------------------- */
+	--focus-ring-width: 2px;
+	--focus-ring-color: var(--color-link);
+	--focus-offset: 2px;
+
+	/* ---- Motion ---------------------------------------------------------- */
+	/* Mechanical, not bouncy — matches the hard-border vocabulary. */
+	--motion-fast: 90ms;
+	--motion-base: 140ms;
+	--motion-slow: 220ms;
+	--ease-snap: cubic-bezier(0.2, 0, 0, 1);
+
+	/* ---- Touch (Design.md:104) ------------------------------------------- */
+	--touch-min: 44px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	:root {
+		--motion-fast: 1ms;
+		--motion-base: 1ms;
+		--motion-slow: 1ms;
+	}
+}

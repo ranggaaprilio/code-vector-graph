@@ -127,7 +127,7 @@ rather than failing outright when the MCP server is unavailable.
 ## Architecture
 
 ```
-browser (Alpine.js + Cytoscape + Tailwind, all vendored — no CDN)
+browser — SvelteKit SPA (frontend/), Cytoscape + highlight.js as npm deps
    │  fetch /api/*
    ▼
 FastAPI (api/app.py) ── routers/{apps,health,qdrant,graph,search,chat}.py
@@ -140,7 +140,28 @@ FastAPI (api/app.py) ── routers/{apps,health,qdrant,graph,search,chat}.py
         └─ providers/{anthropic,openai}.py
 ```
 
-Static assets ship as package data under `api/static/`, so the dashboard works
-from an installed wheel and not just a source checkout. `index.html` is assembled
-per request from `static/views/*.html` partials via `<!-- @include … -->` markers,
-which keeps each view editable on its own without adding a build step.
+### Frontend
+
+The UI lives in `frontend/` as a SvelteKit SPA (Svelte 5 runes, TypeScript,
+`@sveltejs/adapter-static` with `fallback: 'index.html'`). `npm run build` writes
+straight into `src/code_vector_graph/api/static/`, which ships as package data,
+so the dashboard works from an installed wheel and not just a source checkout.
+`api/app.py` serves that directory through a single catch-all route registered
+after the `/api/*` routers, so client-side deep links survive a hard refresh.
+
+```
+cd frontend
+npm install
+npm run dev     # Vite on :5173, /api proxied to 127.0.0.1:8000 (run cvg-serve too)
+npm run build   # -> ../src/code_vector_graph/api/static/
+npm run check   # svelte-check (strict)
+npm run test    # vitest — the frontend unit suite
+```
+
+Styling is hand-written CSS driven by design tokens in
+`frontend/src/lib/styles/tokens.css`, which implement the `Design.md` visual
+system (closed palette, zero radius, hard borders, single light theme). The three
+deliberate deviations from that document — interaction states, a modernised body
+type scale, and display tracking — are documented in the token file itself.
+Literal colour values live only in `tokens.css` and `frontend/src/lib/utils/tints.ts`;
+everything else references tokens.

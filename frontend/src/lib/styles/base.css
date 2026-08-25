@@ -1,0 +1,267 @@
+@import './tokens.css';
+
+/* Explicit cascade order so component styles never have to out-specify the
+   base layer with :global() escalation. */
+@layer reset, base, components, utilities;
+
+@layer reset {
+	*,
+	*::before,
+	*::after {
+		box-sizing: border-box;
+	}
+
+	html,
+	body {
+		height: 100%;
+	}
+
+	h1,
+	h2,
+	h3,
+	h4,
+	p,
+	figure,
+	blockquote,
+	dl,
+	dd {
+		margin: 0;
+	}
+
+	button,
+	input,
+	select,
+	textarea {
+		font-family: inherit;
+		color: inherit;
+		border-radius: var(--radius-none);
+	}
+
+	img {
+		max-width: 100%;
+		display: block;
+	}
+}
+
+@layer base {
+	html {
+		/* Keep the page from shifting sideways when a scrollbar appears. */
+		scrollbar-gutter: stable;
+	}
+
+	body {
+		margin: 0;
+		background: var(--color-page-backdrop);
+		color: var(--color-ink);
+		font-family: var(--font-body);
+		font-size: var(--type-body-size);
+		line-height: var(--type-body-lh);
+		text-rendering: optimizeLegibility;
+	}
+
+	a {
+		color: var(--color-link);
+	}
+
+	a:not(.ds-btn) {
+		text-decoration: underline;
+	}
+
+	/* One focus treatment for the whole app. Components must not redefine it. */
+	:focus-visible {
+		outline: var(--focus-ring-width) solid var(--focus-ring-color);
+		outline-offset: var(--focus-offset);
+	}
+
+	/* Inputs sit flush inside hairline chrome, so their ring goes inward. */
+	.ds-input:focus-visible {
+		outline-offset: calc(-1 * var(--focus-ring-width));
+	}
+}
+
+@layer components {
+	/* Typography roles ---------------------------------------------------- */
+	.ds-display {
+		font-family: var(--font-display);
+		font-size: var(--type-display-size);
+		font-weight: var(--type-display-weight);
+		line-height: var(--type-display-lh);
+		text-transform: uppercase;
+		letter-spacing: var(--type-display-tracking);
+		text-wrap: balance;
+	}
+
+	.ds-h1 {
+		font-family: var(--font-display);
+		font-size: var(--type-h1-size);
+		font-weight: var(--type-h1-weight);
+		line-height: var(--type-h1-lh);
+		letter-spacing: var(--type-display-tracking);
+		text-wrap: balance;
+	}
+
+	.ds-h2 {
+		font-family: var(--font-heading);
+		font-size: var(--type-h2-size);
+		font-weight: var(--type-h2-weight);
+		line-height: var(--type-h2-lh);
+		text-transform: uppercase;
+	}
+
+	.ds-h3 {
+		font-family: var(--font-heading);
+		font-size: var(--type-h3-size);
+		font-weight: var(--type-h3-weight);
+		line-height: var(--type-h3-lh);
+		text-transform: uppercase;
+	}
+
+	.ds-body-sm {
+		font-size: var(--type-body-sm-size);
+		line-height: var(--type-body-sm-lh);
+	}
+
+	.ds-caption {
+		font-size: var(--type-caption-size);
+		line-height: var(--type-caption-lh);
+		color: var(--color-ink-muted);
+	}
+
+	.ds-ui-label {
+		font-family: var(--font-heading);
+		font-size: var(--type-ui-label-size);
+		font-weight: var(--type-ui-label-weight);
+		text-transform: uppercase;
+	}
+
+	.ds-mono {
+		font-family: var(--font-mono);
+	}
+
+	/* Shared chrome for text-input / textarea / select — text-input component
+	   from Design.md: white fill, 1px black border, Times Roman, zero radius. */
+	.ds-input {
+		background: var(--color-canvas);
+		color: var(--color-ink);
+		border: var(--border-hairline);
+		border-radius: var(--radius-none);
+		font-family: var(--font-body);
+		font-size: var(--type-body-size);
+		padding: var(--space-xs) var(--space-s);
+		width: 100%;
+		transition:
+			border-color var(--motion-fast) var(--ease-snap),
+			background-color var(--motion-fast) var(--ease-snap);
+	}
+
+	.ds-input:hover:not(:disabled) {
+		background: var(--color-row-hover);
+	}
+
+	.ds-input:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	/* Graph node swatch: the same tint + angular shape pairing the canvas uses,
+	   so a legend entry and its node read as the same thing. Shapes are all
+	   angular — Design.md:281 forbids softened corners. */
+	.ds-swatch {
+		display: inline-block;
+		width: 12px;
+		height: 12px;
+		border: var(--border-hairline);
+		flex-shrink: 0;
+	}
+
+	.ds-swatch[data-shape='diamond'] {
+		clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+	}
+
+	.ds-swatch[data-shape='triangle'] {
+		clip-path: polygon(50% 0, 100% 100%, 0 100%);
+	}
+
+	.ds-swatch[data-shape='hexagon'] {
+		clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%);
+	}
+
+	.ds-swatch[data-shape='octagon'] {
+		clip-path: polygon(30% 0, 70% 0, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0 70%, 0 30%);
+	}
+
+	.ds-swatch[data-shape='pentagon'] {
+		clip-path: polygon(50% 0, 100% 38%, 82% 100%, 18% 100%, 0 38%);
+	}
+
+	.ds-swatch[data-shape='tag'] {
+		clip-path: polygon(0 0, 70% 0, 100% 50%, 70% 100%, 0 100%);
+	}
+
+	/* Keyboard escape hatch to the main content. */
+	.ds-skip-link {
+		position: absolute;
+		left: var(--space-sm);
+		top: var(--space-sm);
+		z-index: 100;
+		background: var(--color-frame-ink);
+		color: var(--color-canvas);
+		font-family: var(--font-heading);
+		font-size: var(--type-button-size);
+		font-weight: var(--type-button-weight);
+		text-transform: uppercase;
+		text-decoration: none;
+		padding: var(--space-s) var(--space-md);
+		transform: translateY(-200%);
+	}
+
+	.ds-skip-link:focus-visible {
+		transform: translateY(0);
+	}
+}
+
+@layer utilities {
+	/* Scrollable containers (code panes, tables, canvases) must never blow out
+	   the page frame — Design.md's fixed catalog layout has no room to spare. */
+	.ds-scroll-x {
+		overflow-x: auto;
+		overscroll-behavior-x: contain;
+	}
+
+	.ds-scroll-y {
+		overflow-y: auto;
+		overscroll-behavior-y: contain;
+	}
+
+	/* Prose blocks (markdown, wiki bodies, chat answers) get a real measure so
+	   Times Roman stays readable instead of running the full window width. */
+	.ds-prose {
+		max-width: var(--measure);
+		text-wrap: pretty;
+	}
+
+	/* Any figure that gets compared column-to-column or row-to-row. */
+	.ds-num {
+		font-variant-numeric: tabular-nums;
+	}
+
+	/* Long lists: let the browser skip offscreen rows. */
+	.ds-defer {
+		content-visibility: auto;
+		contain-intrinsic-size: auto 44px;
+	}
+}
+
+/* Mouse-only chrome was fine in 1996; touch was not a thing. Design.md:104
+   asks for 44x44 minimum on small screens. */
+@media (max-width: 768px) {
+	@layer base {
+		button,
+		[role='tab'],
+		a.ds-btn,
+		select,
+		input:not([type='checkbox']):not([type='radio']) {
+			min-height: var(--touch-min);
+		}
+	}
+}

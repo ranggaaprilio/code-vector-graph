@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Code Vector Graph">
+  <title>Code Vector Graph</title>
+  <!-- The page-frame motif from Design.md, at 32px: black frame, white canvas,
+       one olive ribbon block. Palette-closed. -->
+  <rect width="32" height="32" fill="#000000"/>
+  <rect x="3" y="3" width="26" height="26" fill="#ffffff"/>
+  <rect x="6" y="7" width="20" height="6" fill="#8e8a25"/>
+  <rect x="6" y="17" width="20" height="2" fill="#000000"/>
+  <rect x="6" y="22" width="13" height="2" fill="#000000"/>
+</svg>
