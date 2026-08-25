@@ -24,6 +24,10 @@ NODE_LABELS = frozenset([
     "Chunk",
     "GlossaryEntry",
     "WikiPage",
+    # Application / repository identity (see repos.py). One Application
+    # CONTAINS many Repository nodes; a Repository CONTAINS its File nodes.
+    "Application",
+    "Repository",
 ])
 
 # Relationship types for the code ontology
@@ -50,6 +54,10 @@ NODE_PROPERTIES = {
         "line_count": int,
         "exports": list[str],
         "imports": list[str],
+        # Identity (optional; absent on legacy nodes indexed before Phase 4).
+        "app": str | None,
+        "repo": str | None,
+        "rel_path": str | None,
     },
     "Module": {
         "name": str,
@@ -148,6 +156,7 @@ NODE_PROPERTIES = {
         "token_count": int,
         "decorators": list[str],
         "file_hash": str,
+        "repo": str | None,
     },
     "GlossaryEntry": {
         "term": str,
@@ -173,7 +182,29 @@ NODE_PROPERTIES = {
         "tags": list[str],
         "resource": str,
         "source": str,
+        "repo": str | None,
+        "app": str | None,
+        "how_it_works": str | None,
     },
+    "Application": {
+        "name": str,
+    },
+    "Repository": {
+        "name": str,
+        "root": str,
+        "app": str,
+        "indexed_at": str,
+    },
+}
+
+# Properties that may be absent from a node of the given label. Everything else
+# in NODE_PROPERTIES[label] is required. Optional properties are still
+# type-checked when present; ``None`` is always accepted for them.
+OPTIONAL_NODE_PROPERTIES: dict[str, frozenset[str]] = {
+    "File": frozenset({"app", "repo", "rel_path"}),
+    "Chunk": frozenset({"repo"}),
+    "WikiPage": frozenset({"repo", "app", "how_it_works"}),
+    "Repository": frozenset({"indexed_at", "app"}),
 }
 
 
@@ -183,7 +214,8 @@ def validate_node(label: str, properties: dict) -> bool:
         return False
 
     schema = NODE_PROPERTIES[label]
-    required_props = set(schema.keys())
+    optional = OPTIONAL_NODE_PROPERTIES.get(label, frozenset())
+    required_props = set(schema.keys()) - optional
 
     missing = required_props - set(properties.keys())
     if missing:
@@ -195,6 +227,8 @@ def validate_node(label: str, properties: dict) -> bool:
             continue
 
         expected_type = schema[prop_name]
+        if prop_value is None and prop_name in optional:
+            continue
         if isinstance(expected_type, types.UnionType):
             if prop_value is not None and not isinstance(prop_value, get_args(expected_type)):
                 return False
@@ -211,4 +245,4 @@ def validate_node(label: str, properties: dict) -> bool:
 def get_required_properties(label: str) -> set[str]:
     if label not in NODE_PROPERTIES:
         return set()
-    return set(NODE_PROPERTIES[label].keys())
+    return set(NODE_PROPERTIES[label].keys()) - OPTIONAL_NODE_PROPERTIES.get(label, frozenset())

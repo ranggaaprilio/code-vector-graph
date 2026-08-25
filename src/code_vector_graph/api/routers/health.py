@@ -7,7 +7,15 @@ from qdrant_client import QdrantClient
 
 from code_vector_graph.api.deps import get_graph, get_mcp, get_qdrant
 from code_vector_graph.api.mcp_client import MCPSessionManager
-from code_vector_graph.api.config import NEO4J_URI, QDRANT_URL
+from code_vector_graph.api.config import (
+    ANTHROPIC_MODEL,
+    CVG_CHAT_MODEL,
+    CVG_CHAT_PROVIDER,
+    MODEL_ID,
+    NEO4J_URI,
+    QDRANT_COLLECTION,
+    QDRANT_URL,
+)
 from code_vector_graph.stores.graph_store import GraphStore
 
 router = APIRouter()
@@ -21,7 +29,14 @@ async def health(
     graph: GraphStore = Depends(get_graph),
     mcp: MCPSessionManager = Depends(get_mcp),
 ):
-    result: dict = {}
+    result: dict = {
+        "config": {
+            "collection": QDRANT_COLLECTION,
+            "model_id": MODEL_ID,
+            "chat_provider": CVG_CHAT_PROVIDER or "anthropic",
+            "chat_model": CVG_CHAT_MODEL or ANTHROPIC_MODEL,
+        }
+    }
 
     # Qdrant
     try:

@@ -26,28 +26,39 @@ else:
     MCP_COMMAND = sys.executable
     MCP_ARGS = ["-m", _MCP_MODULE]
 
-# Anthropic
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6")
-
-# Reuse src config constants (no embedder import)
+# Reuse src config constants (no embedder import). Imported after load_dotenv() so
+# .env values are visible when code_vector_graph.config resolves its env-backed settings.
 from code_vector_graph.config import (  # noqa: E402
-    DEFAULT_COLLECTION_NAME,
-    DEFAULT_MODEL_ID,
-    DEFAULT_QDRANT_URL,
+    ANTHROPIC_API_KEY,
+    ANTHROPIC_MODEL,
+    CVG_CHAT_MODEL,
+    CVG_CHAT_PROVIDER,
     NEO4J_PASSWORD,
     NEO4J_URI,
     NEO4J_USER,
-    get_model_config,
+    QDRANT_URL,
+    active_base_collection,
+    active_collection,
 )
-from code_vector_graph.stores.vector_store import get_collection_name  # noqa: E402
 
-_MODEL_ID = "jina"
-_BASE_COLLECTION = "code_chunks_mac_mps_24gb"
+# Model + collection the dashboard reads. Resolved from CVG_MODEL_ID /
+# CVG_COLLECTION_NAME — the same knobs the MCP server uses — so both sides agree.
+QDRANT_COLLECTION, QDRANT_DIMENSIONS, MODEL_ID = active_collection()
 
-_model_cfg = get_model_config(_MODEL_ID)
-QDRANT_URL = os.getenv("QDRANT_URL", DEFAULT_QDRANT_URL)
-QDRANT_COLLECTION = get_collection_name(
-    _BASE_COLLECTION, "huggingface", model=_model_cfg["model_name"]
-)
-QDRANT_DIMENSIONS = _model_cfg["dimensions"]
+# Environment handed to the spawned MCP server so it reads the same stores/collection
+# as the dashboard, regardless of how the parent process was configured.
+MCP_ENV_OVERRIDES = {
+    "CVG_MODEL_ID": MODEL_ID,
+    "CVG_COLLECTION_NAME": active_base_collection(),
+    "QDRANT_URL": QDRANT_URL,
+    "NEO4J_URI": NEO4J_URI,
+    "NEO4J_USER": NEO4J_USER,
+    "NEO4J_PASSWORD": NEO4J_PASSWORD,
+}
+
+__all__ = [
+    "MCP_COMMAND", "MCP_ARGS", "MCP_ENV_OVERRIDES",
+    "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL", "CVG_CHAT_PROVIDER", "CVG_CHAT_MODEL",
+    "QDRANT_URL", "QDRANT_COLLECTION", "QDRANT_DIMENSIONS", "MODEL_ID",
+    "NEO4J_URI", "NEO4J_USER", "NEO4J_PASSWORD",
+]

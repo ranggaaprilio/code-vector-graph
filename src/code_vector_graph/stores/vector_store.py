@@ -7,7 +7,9 @@ from typing import Any
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
     Distance,
+    FieldCondition,
     Filter,
+    MatchAny,
     OptimizersConfigDiff,
     PayloadSchemaType,
     PointStruct,
@@ -155,8 +157,17 @@ class VectorStore:
             ("kind", PayloadSchemaType.KEYWORD),
             ("source", PayloadSchemaType.KEYWORD),
             ("symbol_id", PayloadSchemaType.KEYWORD),
-        ]
+        ] + list(self.REPO_INDEXES)
 
+        self._create_indexes(indexes)
+
+    # Payload indexes backing app/repo scoping (see repos.py).
+    REPO_INDEXES = (
+        ("app", PayloadSchemaType.KEYWORD),
+        ("repo", PayloadSchemaType.KEYWORD),
+    )
+
+    def _create_indexes(self, indexes) -> None:
         for field_name, schema_type in indexes:
             try:
                 self.client.create_payload_index(
@@ -168,6 +179,37 @@ class VectorStore:
             except Exception as e:
                 # Index may already exist, which is fine
                 logger.debug(f"Index for '{field_name}' may already exist: {e}")
+
+    def ensure_repo_indexes(self) -> None:
+        """Create only the ``app`` / ``repo`` payload indexes (idempotent).
+
+        Used by the backfill CLI on collections that predate these fields.
+        """
+        self._create_indexes(self.REPO_INDEXES)
+
+    def set_repo_payload(
+        self,
+        repo: str,
+        app: str,
+        repo_root: str,
+        file_paths: list[str],
+        wait: bool = True,
+    ) -> int:
+        """Stamp ``app`` / ``repo`` / ``repo_root`` onto every point whose
+        ``file_path`` is in ``file_paths``. Returns the number of paths targeted.
+
+        Points are selected by payload filter (``file_path`` MatchAny), so this
+        works for legacy points regardless of their ids. Idempotent.
+        """
+        if not file_paths:
+            return 0
+        self.client.set_payload(
+            collection_name=self.collection_name,
+            payload={"app": app, "repo": repo, "repo_root": repo_root},
+            points=Filter(must=[FieldCondition(key="file_path", match=MatchAny(any=list(file_paths)))]),
+            wait=wait,
+        )
+        return len(file_paths)
 
     def create_collection(self) -> None:
         """
@@ -280,6 +322,12 @@ class VectorStore:
             "source": chunk.get("source"),
             "confidence": chunk.get("confidence"),
             "symbol_id": chunk.get("symbol_id"),
+            # Application / repository identity (repos.py). None on chunks from
+            # callers that do not resolve an identity (e.g. OKF wiki sync).
+            "app": chunk.get("app"),
+            "repo": chunk.get("repo"),
+            "repo_root": chunk.get("repo_root"),
+            "rel_path": chunk.get("rel_path"),
         }
 
         return PointStruct(

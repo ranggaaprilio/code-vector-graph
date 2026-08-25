@@ -1,0 +1,167 @@
+<!-- ==================== CHAT (#/chat) ==================== -->
+<div x-show="$store.app.screen === 'chat'" x-data="chatView" x-init="init()">
+  <div class="h-screen flex flex-col">
+    <!-- Header -->
+    <div class="p-3 border-b border-gray-800 bg-gray-900 flex items-center gap-3">
+      <span class="text-lg">💬</span>
+      <h1 class="text-sm font-semibold text-gray-200">AI Code Assistant</h1>
+      <span class="text-xs text-gray-500" x-text="`Scope: ${store.scopeLabel}`"></span>
+      <template x-if="!store.app">
+        <span class="text-xs text-gray-600">— select an application for focused answers</span>
+      </template>
+      <div class="flex-1"></div>
+      <!-- Options toggle -->
+      <button @click="showOptions = !showOptions" class="btn-ghost">Options</button>
+      <button @click="clearChat()" class="btn-ghost">Clear</button>
+    </div>
+
+    <!-- Disabled banner -->
+    <template x-if="!configLoading && disabledReason">
+      <div class="px-4 py-2 bg-yellow-900/40 border-b border-yellow-800 text-xs text-yellow-200" x-text="disabledReason"></div>
+    </template>
+
+    <!-- Options bar (collapsible) -->
+    <div x-show="showOptions" class="px-4 py-2 border-b border-gray-800 bg-gray-900 flex gap-4 text-xs text-gray-400 items-center">
+      <label class="flex items-center gap-1">
+        Mode:
+        <select x-model="mode" class="ml-1 bg-gray-800 border border-gray-700 rounded px-2 py-0.5 text-gray-300">
+          <option value="hybrid">hybrid</option>
+          <option value="vector">vector</option>
+          <option value="graph">graph</option>
+        </select>
+      </label>
+      <label class="flex items-center gap-1">
+        Top-K:
+        <input type="number" x-model.number="topK" min="1" max="30"
+          class="ml-1 w-14 bg-gray-800 border border-gray-700 rounded px-2 py-0.5 text-gray-300" />
+      </label>
+      <template x-if="config?.provider">
+        <span class="ml-auto text-gray-500" x-text="`${config.provider} · ${config.model || ''}`"></span>
+      </template>
+    </div>
+
+    <!-- Thread -->
+    <div class="flex-1 overflow-y-auto p-4 space-y-4" x-ref="thread">
+      <!-- Empty state -->
+      <template x-if="messages.length === 0">
+        <div class="flex flex-col items-center justify-center h-full gap-6 text-center">
+          <div class="text-4xl">💬</div>
+          <div>
+            <p class="text-gray-400 text-sm mb-4">Ask anything about the indexed codebase.</p>
+            <div class="flex flex-wrap gap-2 justify-center max-w-lg">
+              <template x-for="s in suggestions" :key="s">
+                <button
+                  @click="useSuggestion(s)"
+                  class="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700 rounded-full px-3 py-1.5 text-left"
+                  x-text="s"
+                ></button>
+              </template>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- Messages -->
+      <template x-for="msg in messages" :key="msg.id">
+        <div>
+          <!-- Scope-change system note -->
+          <template x-if="msg.role === 'system'">
+            <div class="text-center text-[11px] text-gray-500 italic" x-text="msg.content"></div>
+          </template>
+
+          <div :class="msg.role === 'user' ? 'flex justify-end' : (msg.role === 'assistant' ? 'flex justify-start' : 'hidden')">
+            <div>
+              <!-- User bubble -->
+              <template x-if="msg.role === 'user'">
+                <div class="chat-user-msg text-sm" x-text="msg.content"></div>
+              </template>
+
+              <!-- Assistant bubble -->
+              <template x-if="msg.role === 'assistant'">
+                <div>
+                  <div class="chat-bubble">
+                    <!-- Thinking indicator: dots + live status, shown as one unit -->
+                    <template x-if="msg.streaming && !msg.content">
+                      <div class="chat-assistant-msg chat-thinking">
+                        <span class="typing-dots"><span></span><span></span><span></span></span>
+                        <span class="chat-thinking-status" x-show="statusMsg" x-text="statusMsg"></span>
+                      </div>
+                    </template>
+                    <!-- Rendered markdown or plain text -->
+                    <template x-if="msg.content">
+                      <div class="chat-assistant-msg prose-dark text-sm">
+                        <template x-if="msg.renderedHtml">
+                          <div x-html="msg.renderedHtml"></div>
+                        </template>
+                        <template x-if="!msg.renderedHtml">
+                          <div class="whitespace-pre-wrap" x-text="msg.content"></div>
+                        </template>
+                        <template x-if="msg.streaming">
+                          <span class="inline-block w-1 h-3 bg-blue-400 ml-0.5 animate-pulse"></span>
+                        </template>
+                      </div>
+                    </template>
+                    <!-- Live status for a tool round after tokens have already started -->
+                    <template x-if="msg.streaming && msg.content && statusMsg">
+                      <div class="chat-thinking-status mt-1 pl-1" x-text="statusMsg"></div>
+                    </template>
+                  </div>
+
+                  <!-- Sources -->
+                  <template x-if="msg.sources && msg.sources.length">
+                    <details class="mt-1 max-w-lg">
+                      <summary class="text-xs text-gray-500 cursor-pointer hover:text-gray-300">
+                        📎 Sources (<span x-text="msg.sources.length"></span>)
+                      </summary>
+                      <div class="mt-1 space-y-1 pl-2 border-l border-gray-700">
+                        <template x-for="(s, i) in msg.sources" :key="i">
+                          <button @click="openSource(s)" class="flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 font-mono text-left">
+                            <span class="badge-wiki" x-show="isWiki(s)">wiki</span>
+                            <span x-text="locationStr(s)"></span>
+                          </button>
+                        </template>
+                      </div>
+                    </details>
+                  </template>
+                </div>
+              </template>
+            </div>
+          </div>
+        </div>
+      </template>
+    </div>
+
+    <!-- Error bar -->
+    <template x-if="error">
+      <div class="px-4 py-2 bg-red-900 border-t border-red-800 text-xs text-red-200 flex justify-between">
+        <span x-text="error"></span>
+        <button @click="error=null" class="ml-2 text-red-400 hover:text-red-200">✕</button>
+      </div>
+    </template>
+
+    <!-- Composer -->
+    <div class="p-3 border-t border-gray-800 bg-gray-900">
+      <div class="flex gap-2 items-end">
+        <textarea
+          x-ref="composer"
+          x-model="input"
+          @keydown="onKeydown($event)"
+          placeholder="Ask a question about the codebase… (Enter to send, Shift+Enter for newline)"
+          rows="2"
+          class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 placeholder-gray-500 resize-none focus:outline-none focus:border-blue-500 disabled:opacity-50"
+          :disabled="streaming || !!disabledReason"
+        ></textarea>
+        <template x-if="!streaming">
+          <button
+            @click="send()"
+            :disabled="!input.trim() || !!disabledReason"
+            class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-40 transition-colors"
+          >Send</button>
+        </template>
+        <template x-if="streaming">
+          <button @click="stop()" class="bg-red-700 hover:bg-red-600 text-white px-4 py-2 rounded-lg text-sm">Stop</button>
+        </template>
+      </div>
+    </div>
+  </div>
+</div>

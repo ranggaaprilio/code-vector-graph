@@ -51,7 +51,9 @@ class TestGraphStore:
 
         gs = GraphStore(uri="bolt://localhost:7687", user="neo4j", password="test")
 
-        mock_driver_class.assert_called_once_with("bolt://localhost:7687", auth=("neo4j", "test"))
+        mock_driver_class.assert_called_once_with(
+            "bolt://localhost:7687", auth=("neo4j", "test"), max_transaction_retry_time=5.0
+        )
         assert gs.driver == mock_driver
 
     @patch('code_vector_graph.stores.graph_store.GraphDatabase.driver')
@@ -71,15 +73,23 @@ class TestGraphStore:
         gs = GraphStore()
         gs.create_constraints()
 
-        # Verify execute_query called for each label
         calls = mock_driver.execute_query.call_args_list
-        assert len(calls) == len(NODE_LABELS)
+        cyphers = [c[0][0] for c in calls]
 
-        # Verify each cypher contains CREATE CONSTRAINT and IS UNIQUE
-        for call_args in calls:
-            cypher = call_args[0][0]
-            assert "CREATE CONSTRAINT" in cypher
+        # One uniqueness constraint per label...
+        constraints = [c for c in cyphers if "CREATE CONSTRAINT" in c]
+        assert len(constraints) == len(NODE_LABELS)
+        for cypher in constraints:
             assert "IS UNIQUE" in cypher
+
+        # ...plus the scoping indexes used by the application registry.
+        indexes = [c for c in cyphers if "CREATE INDEX" in c]
+        assert any("(n.repo)" in c and ":File" in c for c in indexes)
+        assert any("(n.app)" in c and ":File" in c for c in indexes)
+        assert any("(n.repo)" in c and ":WikiPage" in c for c in indexes)
+        assert len(calls) == len(constraints) + len(indexes)
+
+        for call_args in calls:
             assert call_args.kwargs["database_"] == "neo4j"
 
     @patch('code_vector_graph.stores.graph_store.GraphDatabase.driver')

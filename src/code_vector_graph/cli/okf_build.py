@@ -50,6 +50,8 @@ def create_parser() -> argparse.ArgumentParser:
     p.add_argument("--exclude-labels", default=None, help="Comma-separated labels to exclude")
     p.add_argument("--repo-base-url", default=None, help="Base URL for `resource` links, e.g. https://github.com/org/repo/blob/main")
     p.add_argument("--repo-root", default=None, help="Path prefix stripped from `resource` (default: --repo-path)")
+    p.add_argument("--repo-name", default=None, help="Repository name recorded in page frontmatter (default: basename of --repo-path)")
+    p.add_argument("--app-name", default=None, help="Application the repository belongs to (default: the repo name)")
     p.add_argument("--limit", type=int, default=None, help="Cap number of concepts (smoke tests)")
     p.add_argument("--force", action="store_true", help="Ignore the incremental cache; re-enrich everything")
     p.add_argument("--dry-run", action="store_true", help="Build skeleton + bundle with metadata-only pages; no API calls")
@@ -133,6 +135,8 @@ def main(argv: list[str] | None = None) -> int:
         repo_base_url=args.repo_base_url,
         repo_root=args.repo_root or repo_path,
         stats=stats,
+        repo_name=args.repo_name,
+        app_name=args.app_name,
     )
 
     if not args.dry_run:

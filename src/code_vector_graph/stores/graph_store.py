@@ -1,6 +1,12 @@
 import logging
 from neo4j import GraphDatabase
-from code_vector_graph.config import NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD, NEO4J_DATABASE
+from code_vector_graph.config import (
+    NEO4J_DATABASE,
+    NEO4J_MAX_RETRY_TIME,
+    NEO4J_PASSWORD,
+    NEO4J_URI,
+    NEO4J_USER,
+)
 from code_vector_graph.stores.graph_schema import NODE_LABELS, RELATIONSHIP_TYPES, validate_node
 
 logger = logging.getLogger(__name__)
@@ -8,6 +14,15 @@ NAME = __name__
 
 # Number of records to process in a single batch for ingestion
 BATCH_SIZE = 500
+
+# Secondary (non-unique) property indexes: (index_name, label, property).
+# These back the app/repo scoping filters used by the dashboard, the MCP server
+# and the backfill CLI.
+PROPERTY_INDEXES = (
+    ("file_repo", "File", "repo"),
+    ("file_app", "File", "app"),
+    ("wikipage_repo", "WikiPage", "repo"),
+)
 
 
 def _counter_value(counters, name: str) -> int:
@@ -41,7 +56,10 @@ class GraphStore:
         self.password = password or NEO4J_PASSWORD
         self.database = database or NEO4J_DATABASE
         # The tests patch GraphDatabase.driver, so we delegate directly here
-        self.driver = GraphDatabase.driver(self.uri, auth=(self.user, self.password))
+        self.driver = GraphDatabase.driver(
+            self.uri, auth=(self.user, self.password),
+            max_transaction_retry_time=NEO4J_MAX_RETRY_TIME,
+        )
 
     def check_health(self) -> bool:
         try:
@@ -60,6 +78,44 @@ class GraphStore:
             """
             # Tests only assert presence of the CREATE CONSTRAINT and IS UNIQUE
             self.driver.execute_query(cypher, database_=self.database)
+        self.create_indexes()
+
+    def create_indexes(self):
+        """Create the secondary property indexes in PROPERTY_INDEXES (idempotent)."""
+        for index_name, label, prop in PROPERTY_INDEXES:
+            cypher = f"""
+            CREATE INDEX {index_name} IF NOT EXISTS
+            FOR (n:{label}) ON (n.{prop})
+            """
+            self.driver.execute_query(cypher, database_=self.database)
+
+    def run_write_loop(self, cypher: str, params: dict | None = None, key: str = "n",
+                       max_iterations: int = 10_000) -> int:
+        """Repeat a batched write query until it reports no more work.
+
+        ``cypher`` must limit its own batch (e.g. ``WITH f LIMIT 5000``) and
+        RETURN the number of rows it touched under ``key`` (``RETURN count(f) AS n``).
+        The query is executed until that count is 0; the summed count is returned.
+        This is how the backfill rewrites large graphs without one giant transaction.
+        """
+        total = 0
+        for _ in range(max_iterations):
+            result = self.driver.execute_query(cypher, params or {}, database_=self.database)
+            records = result[0] if isinstance(result, tuple) else getattr(result, "records", result)
+            count = 0
+            if records:
+                first = records[0]
+                try:
+                    value = first[key]
+                except (KeyError, TypeError, IndexError):
+                    value = first.get(key, 0) if hasattr(first, "get") else 0
+                count = int(value or 0)
+            if count <= 0:
+                break
+            total += count
+        else:
+            logger.warning("run_write_loop hit max_iterations=%d; stopping early", max_iterations)
+        return total
 
     def upsert_nodes(self, nodes):
         # Group by label to allow per-label MERGE with the proper label in Cypher

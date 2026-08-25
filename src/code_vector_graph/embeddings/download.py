@@ -52,24 +52,29 @@ def download_model(model_id: str = DEFAULT_MODEL_ID, *, smoke_test: bool = True)
     os.environ["HF_TOKEN"] = token
 
     # Imported lazily so `--help` doesn't pay for loading torch/transformers.
-    import torch
-    from transformers import AutoModel, AutoTokenizer
+    from huggingface_hub import snapshot_download
 
     model_name = get_model_config(model_id)["model_name"]
-    print(f"Downloading {model_name}...")
+    print(f"Downloading {model_name} (this may take a few minutes)...")
 
-    print("Downloading tokenizer...")
-    tokenizer = AutoTokenizer.from_pretrained(
-        model_name, trust_remote_code=True, token=token
-    )
-    print("✓ Tokenizer downloaded")
-
-    print("Downloading model (this may take a few minutes)...")
-    model = AutoModel.from_pretrained(model_name, trust_remote_code=True, token=token)
-    print("✓ Model downloaded successfully")
+    # Fetch files only — no deserialisation. Loading the weights with
+    # AutoModel.from_pretrained needs tens of GB of RAM for the larger models,
+    # so we only do that when the caller asked for a smoke test.
+    local_dir = snapshot_download(model_name, token=token)
+    print(f"✓ Model files downloaded to {local_dir}")
 
     if smoke_test:
-        print("\nTesting model...")
+        import torch
+        from transformers import AutoModel, AutoTokenizer
+
+        print("\nLoading model for smoke test...")
+        tokenizer = AutoTokenizer.from_pretrained(
+            model_name, trust_remote_code=True, token=token, local_files_only=True
+        )
+        model = AutoModel.from_pretrained(
+            model_name, trust_remote_code=True, token=token, local_files_only=True
+        )
+        print("Testing model...")
         test_input = tokenizer("def hello(): pass", return_tensors="pt")
         with torch.no_grad():
             output = model(**test_input)

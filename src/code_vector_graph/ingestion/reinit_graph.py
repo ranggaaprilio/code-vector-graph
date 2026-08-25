@@ -21,6 +21,7 @@ from code_vector_graph.config import (
     NEO4J_URI,
     NEO4J_USER,
 )
+from code_vector_graph.repos import RepoIdentity
 from code_vector_graph.stores.graph_store import GraphStore
 from code_vector_graph.stores.vector_store import VectorStore, get_collection_name
 
@@ -96,6 +97,14 @@ def point_to_graph(point_id: str, payload: dict[str, Any]) -> dict[str, list[dic
     call_sites = [str(item) for item in _as_list(payload.get("call_sites")) if item]
     decorators = [str(item) for item in _as_list(payload.get("decorators")) if item]
 
+    repo_name = payload.get("repo") or None
+    app_name = payload.get("app") or repo_name
+    repo_root = payload.get("repo_root") or ""
+    rel_path = payload.get("rel_path") or None
+    identity = RepoIdentity(app=app_name, name=repo_name, root=repo_root) if repo_name else None
+    if identity is not None and rel_path is None and repo_root:
+        rel_path = identity.rel_path(file_path)
+
     file_id = _node_id(file_path, "File", file_path, 1)
     chunk_id = str(point_id)
     nodes = [
@@ -109,6 +118,9 @@ def point_to_graph(point_id: str, payload: dict[str, Any]) -> dict[str, list[dic
                 "line_count": max(end_line, 0),
                 "exports": exports,
                 "imports": imports,
+                "app": app_name,
+                "repo": repo_name,
+                "rel_path": rel_path,
             },
         },
         {
@@ -134,10 +146,25 @@ def point_to_graph(point_id: str, payload: dict[str, Any]) -> dict[str, list[dic
                 "token_count": int(payload.get("token_count") or 0),
                 "decorators": decorators,
                 "file_hash": file_hash,
+                "repo": repo_name,
             },
         },
     ]
     relationships = [_rel("CONTAINS", file_id, chunk_id)]
+
+    if identity is not None:
+        nodes.append({
+            "label": "Application",
+            "id": identity.app_id,
+            "properties": {"name": identity.app},
+        })
+        nodes.append({
+            "label": "Repository",
+            "id": identity.id,
+            "properties": {"name": identity.name, "root": identity.root, "app": identity.app},
+        })
+        relationships.append(_rel("CONTAINS", identity.app_id, identity.id))
+        relationships.append(_rel("CONTAINS", identity.id, file_id))
 
     class_name = payload.get("class_name")
     if class_name:
@@ -335,11 +362,19 @@ def rebuild_neo4j_from_qdrant(args: argparse.Namespace) -> dict[str, int]:
 
         nodes: list[dict[str, Any]] = []
         relationships: list[dict[str, Any]] = []
+        # Application / Repository nodes repeat on every point of a repo; emit
+        # each id once per run (MERGE would dedupe anyway, this just trims batches).
+        seen_identity_ids: set[str] = set()
 
         for point in iter_qdrant_points(vector_store, args.batch_size):
             graph_data = point_to_graph(str(point.id), point.payload or {})
             stats["points_read"] += 1
-            nodes.extend(graph_data["nodes"])
+            for node in graph_data["nodes"]:
+                if node.get("label") in ("Application", "Repository"):
+                    if node["id"] in seen_identity_ids:
+                        continue
+                    seen_identity_ids.add(node["id"])
+                nodes.append(node)
             relationships.extend(graph_data["relationships"])
 
             if len(nodes) >= args.batch_size:

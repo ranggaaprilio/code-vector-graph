@@ -14,8 +14,9 @@ code-vector-graph/
 ├── scripts/run_mac_mps_24gb.sh # tuned end-to-end run for a 24 GB Apple Silicon Mac
 ├── tests/                      # mirrors the package layout; see docs/testing.md
 └── src/code_vector_graph/
-    ├── config.py               # models, chunking, store + DeepSeek/OKF settings
+    ├── config.py               # models, chunking, store + DeepSeek/OKF/chat settings
     ├── logging_setup.py        # shared logging configuration
+    ├── repos.py                # application/repository identity (RepoIdentity, cluster_paths)
     │
     ├── parsing/                # ── source code → structured data
     │   ├── scanner.py          #    file discovery + SHA256 hashing
@@ -39,6 +40,7 @@ code-vector-graph/
     ├── ingestion/              # ── INGESTION (write path)
     │   ├── pipeline.py         #    the indexing pipeline
     │   ├── reinit_graph.py     #    rebuild Neo4j from Qdrant payloads
+    │   ├── backfill_repo.py    #    stamp app/repo identity onto pre-existing data
     │   └── okf/                #    OKF LLM-wiki layer
     │       ├── skeleton.py     #      concept graph from Tree-sitter
     │       ├── enricher.py     #      DeepSeek enrichment (bottom-up, JSON mode)
@@ -52,12 +54,15 @@ code-vector-graph/
     ├── api/                    # ── FRONT-FACING (web)
     │   ├── app.py              #    FastAPI app + lifespan-managed MCP session
     │   ├── config.py           #    dashboard settings, MCP launch resolution
-    │   ├── deps.py             #    DI providers (Qdrant, Neo4j, MCP)
+    │   ├── deps.py             #    DI providers (Qdrant, Neo4j, MCP, app registry)
     │   ├── mcp_client.py       #    persistent stdio MCP session
-    │   ├── llm.py              #    Anthropic tool-use loop
+    │   ├── llm.py              #    provider-agnostic chat tool-use loop
+    │   ├── providers/          #    anthropic + openai-compatible (deepseek) chat backends
+    │   ├── services/           #    apps.py — ApplicationRegistry (recorded ∪ derived)
     │   ├── schemas.py          #    Pydantic request/response models
-    │   ├── routers/            #    health, qdrant, graph, search, chat
-    │   └── static/             #    the SPA (vendored deps, no CDN)
+    │   ├── serialize.py        #    neo4j node/record -> JSON-safe dict helpers
+    │   ├── routers/            #    apps, health, qdrant, graph, search, chat
+    │   └── static/             #    the SPA — index.html + views/*.html partials, vendored deps, no CDN
     │
     └── cli/                    # ── FRONT-FACING (terminal)
         ├── ingest.py           #    cvg-ingest
@@ -66,7 +71,8 @@ code-vector-graph/
         ├── download_model.py   #    cvg-download-model
         ├── okf_build.py        #    cvg-okf-build
         ├── okf_sync.py         #    cvg-okf-sync
-        └── reinit_graph.py     #    cvg-reinit-graph
+        ├── reinit_graph.py     #    cvg-reinit-graph
+        └── backfill_repo.py    #    cvg-backfill-repo
 ```
 
 ## Console scripts
@@ -83,6 +89,7 @@ code-vector-graph/
 | `cvg-okf-build` | Ingestion (wiki phase 1) | `cli.okf_build` |
 | `cvg-okf-sync` | Ingestion (wiki phase 2) | `cli.okf_sync` |
 | `cvg-reinit-graph` | Ingestion (recovery) | `cli.reinit_graph` |
+| `cvg-backfill-repo` | Ingestion (recovery) | `cli.backfill_repo` |
 
 ## Dependency extras
 
@@ -93,7 +100,7 @@ wheels:
 | Extra | Pulls in | Needed for |
 |---|---|---|
 | `ingest` | torch, transformers | generating embeddings (indexing *or* querying) |
-| `serve` | fastapi, uvicorn, sse-starlette, anthropic | `cvg-serve` |
+| `serve` | fastapi, uvicorn, sse-starlette, anthropic, openai | `cvg-serve` (chat: Anthropic or any OpenAI-compatible endpoint, incl. DeepSeek) |
 | `query` | openai | RAG answers in `cvg-query`, OKF enrichment |
 | `mcp` | mcp[cli] | `cvg-mcp` |
 | `dev` | pytest, pytest-cov | running the test suite |

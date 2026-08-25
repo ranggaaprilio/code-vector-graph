@@ -105,11 +105,14 @@ def test_function_name_extraction():
     assert name == "helloWorld"
 
 
-def test_parse_error_returns_none():
-    code = "function }"  # invalid JS
+def test_parse_error_is_tolerated():
+    # Tree-sitter is error-tolerant: a file with a syntax error must still be
+    # parsed so its recoverable nodes get indexed, not dropped wholesale.
+    code = "function ok() { return 1; }\nfunction }"  # second decl is invalid JS
     path = _write_temp("bad.js", code)
     res = parser.parse_file(path, "javascript")
-    assert res is None
+    assert res is not None
+    assert "function ok()" in res["stripped_text"]
 
 
 def test_extract_ast_metadata_basic():

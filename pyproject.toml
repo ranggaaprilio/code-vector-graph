@@ -25,9 +25,17 @@ dependencies = [
 
 [project.optional-dependencies]
 # Local embedding generation (multi-GB wheels — only needed to index or query).
-ingest = ["torch>=2.7.1", "transformers>=4.53.0"]
-# Web dashboard.
-serve = ["fastapi>=0.110", "uvicorn[standard]>=0.27", "sse-starlette>=2.0", "anthropic>=0.39"]
+ingest = ["torch>=2.7.1", "transformers>=4.53.0", "huggingface_hub>=0.23"]
+# Web dashboard. Pulls in `mcp` because api/mcp_client.py imports it at module
+# top and the dashboard spawns the MCP server for search/chat.
+serve = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "sse-starlette>=2.0",
+    "anthropic>=0.39",
+    "openai>=1.30",
+    "code-vector-graph[mcp]",
+]
 # RAG answers in the query CLI, and OKF wiki enrichment (DeepSeek is OpenAI-compatible).
 query = ["openai>=1.30"]
 # MCP server.
@@ -46,6 +54,7 @@ cvg-download-model = "code_vector_graph.cli.download_model:main"
 cvg-okf-build      = "code_vector_graph.cli.okf_build:main"
 cvg-okf-sync       = "code_vector_graph.cli.okf_sync:main"
 cvg-reinit-graph   = "code_vector_graph.cli.reinit_graph:main"
+cvg-backfill-repo  = "code_vector_graph.cli.backfill_repo:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

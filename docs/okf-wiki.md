@@ -46,6 +46,8 @@ Open `okf-wiki/` in any editor, Obsidian, or GitHub (each `.md` renders with wor
 | Option | Default | Description |
 |--------|---------|-------------|
 | `--repo-path` | `.` | Repository to document |
+| `--repo-name` | *directory name* | Repository name recorded in page frontmatter and the root index |
+| `--app-name` | *repo name* | Application this repository belongs to (e.g. `onebid` for a repo that is one of several backend services) |
 | `--out-dir` | `okf-wiki` | Output bundle directory |
 | `--model-flash` | `deepseek-v4-flash` | Model for concept pages |
 | `--model-pro` | `deepseek-v4-pro` | Model for the repo architecture overview |
@@ -88,7 +90,7 @@ cvg-okf-sync --bundle okf-wiki --no-qdrant
 ```
 
 - **Qdrant**: each page's prose is embedded and upserted into a dedicated `okf_wiki_<model>_<dims>` collection, tagged `source="okf_wiki"` so it's distinguishable from code chunks.
-- **Neo4j**: one `WikiPage` node per concept, linked to the code node it documents via `DOCUMENTS` (the `WikiPage` shares the documented node's id), and to other pages via `REFERENCES` (the LLM's "Related" links). Run the main indexer (`cvg-ingest`) first so the code nodes exist for `DOCUMENTS` edges to attach to.
+- **Neo4j**: one `WikiPage` node per concept, linked to the code node it documents via `DOCUMENTS` (the `WikiPage` shares the documented node's id), and to other pages via `REFERENCES` (the LLM's "Related" links). Run the main indexer (`cvg-ingest`) first so the code nodes exist for `DOCUMENTS` edges to attach to. The bundle's root `index.md` (type `Repository`) is synced too — it becomes the `WikiPage` the dashboard's Application Overview tab shows for that repository, `DOCUMENTS`-linked to the `Repository` node `cvg-ingest`/`cvg-backfill-repo` created.
 
 Browse the result in Neo4j:
 

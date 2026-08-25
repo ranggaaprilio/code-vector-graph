@@ -27,6 +27,44 @@ def reciprocal_rank_fusion(ranked_lists: List[List[Tuple[str, float]]], k: int =
     return sorted(fused.items(), key=lambda x: -x[1])
 
 
+def _records_of(result):
+    """Neo4j's execute_query returns an EagerResult (.records); doubles return plain lists."""
+    if result is None:
+        return []
+    return result.records if hasattr(result, "records") else result
+
+
+def _node_to_dict(node) -> Dict:
+    """Coerce a neo4j Node (or a plain dict / None) into a plain dict of properties."""
+    if node is None:
+        return {}
+    if isinstance(node, dict):
+        return dict(node)
+    if hasattr(node, "items"):
+        return dict(node.items())
+    return {}
+
+
+def _related_to_context(raw) -> List[Dict]:
+    """Serialize get_related_nodes() output into JSON-safe {id, labels, name} dicts."""
+    context: List[Dict] = []
+    for rec in _records_of(raw):
+        get = rec.get if hasattr(rec, "get") else None
+        node = get("related") if get is not None else None
+        if node is None and isinstance(rec, dict):
+            node = rec
+        props = _node_to_dict(node)
+        if not props and node is None:
+            continue
+        labels = list(getattr(node, "labels", []) or props.get("labels") or [])
+        context.append({
+            "id": props.get("id") or (str(getattr(node, "element_id", "")) or None),
+            "labels": labels,
+            "name": props.get("name") or props.get("path") or props.get("title"),
+        })
+    return context
+
+
 class HybridRetriever:
     def __init__(self, vector_store, graph_store, embedder=None):
         # Interfaces are kept generic to accommodate test doubles
@@ -39,22 +77,24 @@ class HybridRetriever:
 
     def search(self, query: str, mode: str = "hybrid", top_k: int = 20,
                vector_weight: float = 0.7, graph_weight: float = 0.3,
-               query_vec=None):
+               query_vec=None, query_filter=None):
         mode = mode.lower()
         if mode == "vector":
-            return self._vector_search(query, top_k, query_vec=query_vec)
+            return self._vector_search(query, top_k, query_vec=query_vec, query_filter=query_filter)
         if mode == "graph":
             return self._graph_search(query, top_k)
         # default: hybrid
-        return self._hybrid_search(query, top_k, vector_weight, graph_weight, query_vec=query_vec)
+        return self._hybrid_search(query, top_k, vector_weight, graph_weight,
+                                   query_vec=query_vec, query_filter=query_filter)
 
-    def _vector_search(self, query: str, top_k: int, query_vec=None) -> List[Dict]:
+    def _vector_search(self, query: str, top_k: int, query_vec=None, query_filter=None) -> List[Dict]:
         """Search vector store for query.
 
         Args:
             query: The search query string
             top_k: Number of results to return
             query_vec: Optional pre-computed query embedding to avoid re-embedding
+            query_filter: Optional Qdrant Filter forwarded to the vector store
 
         Returns:
             List of result dicts with keys: id, payload, score, graph_context
@@ -62,7 +102,7 @@ class HybridRetriever:
         try:
             if query_vec is None and self.embedder is not None:
                 query_vec = self.embedder.embed_query(query)
-            results = self.vector_store.search(query_vec, top_k=top_k)
+            results = self.vector_store.search(query_vec, top_k=top_k, query_filter=query_filter)
         except (ConnectionError, ValueError, AttributeError) as e:
             logger.warning(f"Vector search failed: {e}")
             return []
@@ -117,18 +157,21 @@ class HybridRetriever:
             return []
 
         items = []
-        for r in results:
-            doc_id = r.get("id") if isinstance(r, dict) else None
-            payload = r.get("node") if isinstance(r, dict) else None
-            score = r.get("score", 1.0) if isinstance(r, dict) else 1.0
+        for r in _records_of(results):
+            get = r.get if hasattr(r, "get") else None
+            if get is None:
+                continue
+            doc_id = get("id")
+            payload = _node_to_dict(get("node"))
+            score = get("score", 1.0)
             items.append({"id": doc_id, "payload": payload, "score": score, "graph_context": None})
         return items
 
     def _hybrid_search(self, query: str, top_k: int, vector_weight: float, graph_weight: float,
-                       query_vec=None) -> List[Dict]:
+                       query_vec=None, query_filter=None) -> List[Dict]:
         """Perform hybrid search combining vector and graph results using RRF."""
         vector_top = max(1, top_k * 2)
-        vector_results = self._vector_search(query, vector_top, query_vec=query_vec)
+        vector_results = self._vector_search(query, vector_top, query_vec=query_vec, query_filter=query_filter)
         graph_results = self._graph_search(query, vector_top)
 
         vector_ranked = [(r["id"], r.get("score", 0.0)) for r in vector_results if r.get("id") is not None]
@@ -161,7 +204,8 @@ class HybridRetriever:
         graph_context: List[Dict] = []
         try:
             if hasattr(self.graph_store, "get_related_nodes"):
-                graph_context = self.graph_store.get_related_nodes(doc_id, depth=1, limit=5)
+                raw = self.graph_store.get_related_nodes(doc_id, depth=1, limit=5)
+                graph_context = _related_to_context(raw)
         except (ConnectionError, ValueError, AttributeError) as e:
             logger.warning(f"Graph context enrichment failed for {doc_id}: {e}")
 

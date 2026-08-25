@@ -13,6 +13,9 @@ from code_vector_graph.api.config import (
     QDRANT_DIMENSIONS,
     QDRANT_URL,
 )
+from code_vector_graph.api.services.apps import ApplicationRegistry
+from code_vector_graph.config import CVG_APP_MAP, CVG_APPS_CACHE_TTL, CVG_REPO_MAP, CVG_REPOS_ROOT
+from code_vector_graph.repos import parse_json_map
 from code_vector_graph.stores.graph_store import GraphStore
 
 
@@ -28,3 +31,17 @@ def get_graph() -> GraphStore:
 
 def get_mcp() -> MCPSessionManager:
     return get_mcp_manager()
+
+
+@lru_cache(maxsize=1)
+def get_registry() -> ApplicationRegistry:
+    """Application/repository registry shared by all routers (cached with CVG_APPS_CACHE_TTL)."""
+    return ApplicationRegistry(
+        graph=get_graph(),
+        qdrant=get_qdrant(),
+        collection=QDRANT_COLLECTION,
+        ttl=CVG_APPS_CACHE_TTL,
+        repos_root=CVG_REPOS_ROOT or None,
+        repo_map=parse_json_map(CVG_REPO_MAP),
+        app_map=parse_json_map(CVG_APP_MAP),
+    )

@@ -459,6 +459,14 @@ def parse_file(file_path: str, grammar_name: str) -> Optional[dict]:
         parser = get_parser(grammar_name)
         tree = parser.parse(data)
         _LOGGER.info("Tree-sitter parse complete for %s", file_path)
+        if tree.root_node.has_error:
+            # Tree-sitter is error-tolerant: the tree still contains every
+            # recoverable node, so we keep indexing rather than dropping the
+            # whole file (which would also drop valid files whose syntax the
+            # pinned grammar does not recognise, e.g. Flow annotations).
+            _LOGGER.warning(
+                "Syntax errors in %s; indexing recoverable nodes", file_path
+            )
 
         _LOGGER.info("Starting comment stripping for %s", file_path)
         stripped_text, line_map = strip_comments_with_tree(data, grammar_name, tree)

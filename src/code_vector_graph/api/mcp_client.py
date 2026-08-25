@@ -9,7 +9,7 @@ from contextlib import AsyncExitStack
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-from code_vector_graph.api.config import MCP_ARGS, MCP_COMMAND
+from code_vector_graph.api.config import MCP_ARGS, MCP_COMMAND, MCP_ENV_OVERRIDES
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,9 @@ class MCPSessionManager:
         params = StdioServerParameters(
             command=MCP_COMMAND,
             args=MCP_ARGS,
-            env=os.environ.copy(),
+            # Force the child MCP server onto the same model/collection/stores the
+            # dashboard resolved, so search results match what the UI browses.
+            env={**os.environ, **MCP_ENV_OVERRIDES},
         )
         self._stack = AsyncExitStack()
         try:
@@ -81,15 +83,17 @@ class MCPSessionManager:
                 except Exception:
                     pass
                 raise exc
-            if result.isError:
-                raise RuntimeError(f"MCP tool {name!r} returned an error")
             # Concatenate all TextContent blocks
             parts = []
             for block in result.content:
                 text = getattr(block, "text", None)
                 if text is not None:
                     parts.append(text)
-            return "".join(parts)
+            text_out = "".join(parts)
+            if result.isError:
+                detail = text_out.strip() or "(no detail returned)"
+                raise RuntimeError(f"MCP tool {name!r} returned an error: {detail}")
+            return text_out
 
     async def call_tool_json(self, name: str, arguments: dict) -> dict | list:
         """Call a tool that returns JSON and parse the result."""

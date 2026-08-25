@@ -82,3 +82,55 @@ def test_hybrid_search_calls_both_stores_and_merges():
     graph_store.query_graph.assert_called()
     # Results should be a list of dicts
     assert isinstance(results, list)
+
+
+@pytest.mark.skipif(HybridRetriever is None, reason="hybrid_retriever not implemented")
+def test_graph_leg_contributes_when_query_graph_returns_eager_result():
+    """Neo4j's execute_query returns an EagerResult (.records of Records), not a list of dicts."""
+    from types import SimpleNamespace
+
+    class FakeNode(dict):
+        labels = ["Function"]
+        element_id = "4:x:1"
+
+    vector_store = MagicMock()
+    graph_store = MagicMock()
+    vector_store.search.return_value = [
+        {"id": "doc1", "payload": {"file_path": "test.ts"}, "score": 0.9},
+    ]
+    graph_store.query_graph.return_value = SimpleNamespace(
+        records=[{"id": "doc2", "node": FakeNode({"id": "doc2", "name": "test_func"}), "score": 1.0}]
+    )
+    graph_store.get_related_nodes.return_value = SimpleNamespace(
+        records=[{"related": FakeNode({"id": "doc3", "name": "helper"}), "rels": []}]
+    )
+    retriever = HybridRetriever(vector_store=vector_store, graph_store=graph_store, embedder=MagicMock())
+
+    results = retriever.search("test", mode="hybrid", top_k=5)
+    ids = [r["id"] for r in results]
+    assert "doc2" in ids, "graph-only hit must survive fusion"
+
+    graph_only = next(r for r in results if r["id"] == "doc2")
+    assert graph_only["graph_context"] == [{"id": "doc3", "labels": ["Function"], "name": "helper"}]
+    import json
+    json.dumps(results)  # must be JSON-safe end to end
+
+    graph_hits = retriever.search("test", mode="graph", top_k=5)
+    assert graph_hits[0]["payload"] == {"id": "doc2", "name": "test_func"}
+
+
+@pytest.mark.skipif(HybridRetriever is None, reason="hybrid_retriever not implemented")
+def test_query_filter_forwarded_to_vector_store():
+    vector_store = MagicMock()
+    vector_store.search.return_value = []
+    graph_store = MagicMock()
+    graph_store.query_graph.return_value = []
+    sentinel = object()
+    retriever = HybridRetriever(vector_store=vector_store, graph_store=graph_store, embedder=None)
+
+    retriever.search("q", mode="vector", top_k=3, query_vec=[0.1], query_filter=sentinel)
+    vector_store.search.assert_called_once_with([0.1], top_k=3, query_filter=sentinel)
+
+    vector_store.search.reset_mock()
+    retriever.search("q", mode="hybrid", top_k=3, query_vec=[0.1], query_filter=sentinel)
+    assert vector_store.search.call_args.kwargs["query_filter"] is sentinel

@@ -1,44 +1,103 @@
 """Neo4j graph introspection and query endpoints."""
 
 import logging
+import re
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from neo4j import GraphDatabase
 
-from code_vector_graph.api.deps import get_graph
+from code_vector_graph.api.deps import get_graph, get_registry
 from code_vector_graph.api.schemas import CypherRequest
-from code_vector_graph.api.config import NEO4J_PASSWORD, NEO4J_URI, NEO4J_USER
+from code_vector_graph.api.serialize import serialize_value
+from code_vector_graph.api.services.apps import ApplicationRegistry, AppScope
 from code_vector_graph.stores.graph_schema import NODE_LABELS, RELATIONSHIP_TYPES
 from code_vector_graph.stores.graph_store import GraphStore
+
+# Application/Repository nodes are written by the ingest/backfill pipeline; they join
+# graph_schema.NODE_LABELS in Phase 4 — accept them for browsing already.
+BROWSE_LABELS = frozenset(NODE_LABELS | {"Application", "Repository"})
 
 router = APIRouter(prefix="/graph")
 logger = logging.getLogger(__name__)
 
-_WRITE_KEYWORDS = (
-    "create ", "merge ", "delete ", "detach ", "set ", "remove ",
-    "drop ", "call apoc.refactor", "call apoc.create", "call apoc.merge",
-    "call db.create", "call db.index",
+# Best-effort guard for POST /graph/cypher. The real enforcement is the READ
+# access mode + execute_read below; this only gives a friendlier 400 up front.
+_STRING_LITERAL_RE = re.compile(r"'(?:[^'\\]|\\.)*'|\"(?:[^\"\\]|\\.)*\"")
+_WRITE_KEYWORD_RE = re.compile(
+    r"\b(create|merge|delete|detach|set|remove|drop|foreach)\b|\bload\s+csv\b",
+    re.IGNORECASE,
+)
+_CALL_RE = re.compile(r"\bcall\s+([a-zA-Z_][\w.]*)", re.IGNORECASE)
+# Read-only procedures the dashboard is allowed to CALL (prefix match).
+_CALL_ALLOWLIST = (
+    "db.labels",
+    "db.relationshiptypes",
+    "db.propertykeys",
+    "db.schema.visualization",
+    "apoc.meta.",
 )
 
 
 def _is_write_query(cypher: str) -> bool:
-    lower = cypher.lower()
-    return any(kw in lower for kw in _WRITE_KEYWORDS)
+    """True if the Cypher looks like it mutates the graph or calls a non-allowlisted procedure."""
+    stripped = _STRING_LITERAL_RE.sub("''", cypher)
+    if _WRITE_KEYWORD_RE.search(stripped):
+        return True
+    for match in _CALL_RE.finditer(stripped):
+        proc = match.group(1).lower()
+        if not proc.startswith(_CALL_ALLOWLIST):
+            return True
+    return False
 
 
-def _serialize_value(v):
-    """Convert Neo4j native types to JSON-safe Python."""
-    if hasattr(v, "items"):
-        return dict(v)
-    if hasattr(v, "__iter__") and not isinstance(v, (str, bytes)):
-        return list(v)
-    return v
+# Kept under the old name for existing imports; implementation lives in api/serialize.py.
+_serialize_value = serialize_value
+
+
+def _scope_or_404(registry: ApplicationRegistry, app: str | None, repo: str | None) -> AppScope | None:
+    if not app:
+        if repo:
+            raise HTTPException(status_code=422, detail="`repo` requires `app`")
+        return None
+    try:
+        return registry.scope(app, repo or None)
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+
+
+def _scoped_label_counts(graph: GraphStore, scope: AppScope) -> dict:
+    labels: dict = {}
+    for label in sorted(BROWSE_LABELS):
+        where, params = scope.cypher_label_where(label, "n")
+        try:
+            r = graph.query_graph(f"MATCH (n:{label}) WHERE {where} RETURN count(n) AS cnt", params)
+            recs = r.records if hasattr(r, "records") else list(r)
+            labels[label] = recs[0].get("cnt", 0) if recs and hasattr(recs[0], "get") else 0
+        except Exception:
+            logger.debug("scoped count for %s failed", label, exc_info=True)
+            labels[label] = 0
+    return labels
 
 
 @router.get("/stats")
-def graph_stats(graph: GraphStore = Depends(get_graph)):
+def graph_stats(
+    app: str | None = None,
+    repo: str | None = None,
+    graph: GraphStore = Depends(get_graph),
+    registry: ApplicationRegistry = Depends(get_registry),
+):
     labels: dict = {}
     rel_types: dict = {}
+    scope = _scope_or_404(registry, app, repo)
+    if scope is not None:
+        labels = _scoped_label_counts(graph, scope)
+        node_total = sum(int(v) for v in labels.values() if v)
+        return {
+            "labels": labels,
+            "rel_types": {},
+            "node_total": node_total,
+            "rel_total": None,
+            "scope": scope.label,
+        }
     try:
         # Try APOC meta stats first
         result = graph.query_graph("CALL apoc.meta.stats() YIELD labels, relTypesCount")
@@ -79,17 +138,27 @@ def browse_nodes(
     label: str = Query(..., description="Node label (e.g. Function, Class, File)"),
     limit: int = Query(default=50, le=200),
     skip: int = Query(default=0, ge=0),
+    app: str | None = None,
+    repo: str | None = None,
     graph: GraphStore = Depends(get_graph),
+    registry: ApplicationRegistry = Depends(get_registry),
 ):
-    if label not in NODE_LABELS:
+    if label not in BROWSE_LABELS:
         raise HTTPException(
             status_code=422,
-            detail=f"Unknown label '{label}'. Valid: {sorted(NODE_LABELS)}",
+            detail=f"Unknown label '{label}'. Valid: {sorted(BROWSE_LABELS)}",
         )
+    scope = _scope_or_404(registry, app, repo)
+    params: dict = {"skip": skip, "limit": limit}
+    where = ""
+    if scope is not None:
+        clause, scope_params = scope.cypher_label_where(label, "n")
+        where = f" WHERE {clause}"
+        params.update(scope_params)
     try:
         result = graph.query_graph(
-            f"MATCH (n:{label}) RETURN n SKIP $skip LIMIT $limit",
-            {"skip": skip, "limit": limit},
+            f"MATCH (n:{label}){where} RETURN n SKIP $skip LIMIT $limit",
+            params,
         )
         records = result.records if hasattr(result, "records") else list(result)
     except Exception as e:
@@ -102,7 +171,7 @@ def browse_nodes(
             continue
         props = {k: _serialize_value(v) for k, v in dict(node).items()}
         nodes.append({"id": props.get("id", str(getattr(node, "element_id", ""))), "properties": props})
-    return {"label": label, "nodes": nodes, "skip": skip, "limit": limit}
+    return {"label": label, "nodes": nodes, "skip": skip, "limit": limit, "scope": scope.label if scope else None}
 
 
 @router.get("/subgraph")
@@ -113,16 +182,19 @@ def subgraph(
     graph: GraphStore = Depends(get_graph),
 ):
     try:
+        # Variable-length bounds cannot be parameters in Cypher; `depth` is validated
+        # to 1..3 above so interpolating it is safe. LIMIT bounds the number of paths
+        # (before aggregation) so it actually caps the work done.
         cypher = (
-            "MATCH path = (n {id: $node_id})-[*1..$depth]-(m) "
-            "WITH nodes(path) AS ns, relationships(path) AS rs "
-            "UNWIND ns AS node "
-            "WITH collect(DISTINCT node) AS all_nodes, rs "
-            "UNWIND rs AS rel "
-            "RETURN all_nodes, collect(DISTINCT rel) AS all_rels "
-            "LIMIT $limit"
+            f"MATCH path = (n {{id: $node_id}})-[*1..{depth}]-(m) "
+            "WITH path LIMIT $limit "
+            "UNWIND nodes(path) AS node "
+            "WITH collect(DISTINCT node) AS all_nodes, collect(path) AS paths "
+            "UNWIND paths AS p "
+            "UNWIND relationships(p) AS rel "
+            "RETURN all_nodes, collect(DISTINCT rel) AS all_rels"
         )
-        result = graph.query_graph(cypher, {"node_id": node_id, "depth": depth, "limit": limit})
+        result = graph.query_graph(cypher, {"node_id": node_id, "limit": limit})
         records = result.records if hasattr(result, "records") else list(result)
     except Exception as e:
         raise HTTPException(status_code=503, detail=str(e)) from e

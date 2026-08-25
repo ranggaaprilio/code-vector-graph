@@ -1,0 +1,197 @@
+<!-- ==================== VECTORS (#/vectors) ==================== -->
+<div x-show="$store.app.screen === 'vectors'" x-data="vectorsView" x-init="init()">
+  <div class="h-screen flex flex-col">
+    <!-- Controls -->
+    <div class="p-4 border-b border-gray-800 bg-gray-900">
+      <div class="flex flex-wrap gap-2 items-end">
+        <!-- Search -->
+        <div class="flex-1 min-w-48">
+          <div class="flex gap-1">
+            <input
+              type="text" placeholder="Semantic search…" x-model="searchQuery"
+              @keydown.enter="search()"
+              class="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-blue-500"
+            />
+            <button @click="search()" :disabled="searching"
+              class="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded text-sm disabled:opacity-50">
+              <span x-show="!searching">Search</span>
+              <span x-show="searching">…</span>
+            </button>
+            <template x-if="isSearchMode">
+              <button @click="clearSearch()" class="text-gray-400 hover:text-gray-200 px-2 text-sm">✕</button>
+            </template>
+          </div>
+        </div>
+        <!-- Filters -->
+        <select x-model="language" @change="isSearchMode ? search() : browse()"
+          class="bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-300">
+          <option value="">All languages</option>
+          <option>typescript</option><option>javascript</option><option>tsx</option>
+        </select>
+        <input type="text" placeholder="Path starts with…" x-model="filePrefix"
+          @keydown.enter="browse()"
+          class="bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-300 placeholder-gray-500 w-48" />
+        <select x-model="searchMode" class="bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-300">
+          <option value="hybrid">hybrid</option>
+          <option value="vector">vector</option>
+          <option value="graph">graph</option>
+        </select>
+        <select x-model.number="topK" class="bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm text-gray-300">
+          <template x-for="k in topKOptions" :key="k">
+            <option :value="k" x-text="`top ${k}`"></option>
+          </template>
+        </select>
+      </div>
+      <div class="mt-1 flex items-center gap-3">
+        <span class="text-xs text-gray-500" x-text="`Scope: ${store.scopeLabel}`"></span>
+        <template x-if="isSearchMode">
+          <span class="text-xs text-blue-400">Search results — <span x-text="(searchResults || []).length"></span> found</span>
+        </template>
+        <template x-if="error">
+          <span class="text-xs text-red-400" x-text="error"></span>
+        </template>
+      </div>
+    </div>
+
+    <!-- Two-pane body -->
+    <div class="flex-1 flex overflow-hidden">
+      <!-- List -->
+      <div class="w-1/2 border-r border-gray-800 overflow-y-auto">
+        <template x-if="loading || searching">
+          <div class="p-4 space-y-2">
+            <template x-for="i in 8" :key="i">
+              <div class="skeleton h-14 rounded"></div>
+            </template>
+          </div>
+        </template>
+        <template x-if="!loading && !searching && displayList.length === 0">
+          <div class="p-8 text-center text-gray-500 text-sm">No results. Try a different search or filter.</div>
+        </template>
+        <template x-for="item in displayList" :key="item.id">
+          <div
+            @click="selectPoint(item.id, item.payload)"
+            class="p-3 border-b border-gray-800 cursor-pointer hover:bg-gray-900 transition-colors"
+            :class="selectedPoint?.id === item.id ? 'bg-gray-900 border-l-2 border-l-blue-500' : ''"
+          >
+            <div class="flex items-center gap-1.5">
+              <span class="badge-wiki" x-show="isWiki(item)">wiki</span>
+              <span class="badge-code" x-show="!isWiki(item)">code</span>
+              <template x-if="repoLabel(item)">
+                <span class="text-[10px] px-1.5 py-0.5 rounded bg-gray-800 text-indigo-300 border border-gray-700 truncate" x-text="repoLabel(item)"></span>
+              </template>
+              <template x-if="item.score">
+                <span class="text-xs text-yellow-500 ml-auto flex-shrink-0" x-text="`score: ${item.score.toFixed(3)}`"></span>
+              </template>
+            </div>
+            <template x-if="!isWiki(item)">
+              <div class="text-xs font-mono text-blue-400 truncate mt-1" x-text="location(item)"></div>
+            </template>
+            <template x-if="isWiki(item)">
+              <div class="text-xs font-medium text-amber-300 truncate mt-1" x-text="(item.payload || item).term || 'Wiki page'"></div>
+            </template>
+            <div class="flex items-center gap-1 mt-1 flex-wrap">
+              <template x-if="!isWiki(item) && symbol(item)">
+                <span class="text-xs text-green-400" x-text="symbol(item)"></span>
+              </template>
+              <template x-if="!isWiki(item) && (item.payload || item).language">
+                <span class="text-xs px-1.5 py-0.5 rounded" :class="langBadge((item.payload||item).language)" x-text="(item.payload||item).language"></span>
+              </template>
+              <template x-if="!isWiki(item) && (item.payload || item).node_type">
+                <span class="text-xs px-1.5 py-0.5 rounded bg-gray-700 text-gray-300" x-text="(item.payload||item).node_type"></span>
+              </template>
+            </div>
+            <template x-if="isWiki(item) && (item.payload || item).summary">
+              <p class="text-xs text-gray-400 mt-1 line-clamp-2" x-text="(item.payload || item).summary"></p>
+            </template>
+            <template x-if="!isWiki(item) && (item.payload || item).wiki_context">
+              <div class="mt-1 text-[11px] text-amber-300/80 truncate">
+                📖 <span x-text="(item.payload || item).wiki_context.title"></span>
+                <span x-show="(item.payload || item).wiki_context.summary"> — </span>
+                <span x-text="(item.payload || item).wiki_context.summary"></span>
+              </div>
+            </template>
+          </div>
+        </template>
+
+        <!-- Pagination -->
+        <template x-if="!isSearchMode">
+          <div class="p-3 flex gap-2 justify-center border-t border-gray-800">
+            <button @click="prevPage()" :disabled="!prevOffsets.length" class="btn-ghost" :class="!prevOffsets.length && 'disabled:opacity-30'">← Prev</button>
+            <button @click="nextPage()" :disabled="!nextOffset" class="btn-ghost">Next →</button>
+          </div>
+        </template>
+      </div>
+
+      <!-- Detail panel -->
+      <div class="w-1/2 overflow-y-auto p-4" x-ref="detail">
+        <template x-if="!selectedPoint">
+          <div class="h-full flex items-center justify-center text-gray-600 text-sm">← Select a chunk to view details</div>
+        </template>
+        <template x-if="selectedPoint">
+          <div x-data="{copied: false}">
+            <div class="mb-3 flex items-start gap-2">
+              <div class="flex-1 min-w-0">
+                <div class="text-xs font-mono text-blue-400 break-all" x-text="selectedPoint.payload?.file_path || selectedPoint.id"></div>
+                <div class="text-xs text-gray-500 mt-0.5" x-show="!isWiki(selectedPoint)" x-text="`Lines ${selectedPoint.payload?.start_line}–${selectedPoint.payload?.end_line} · ${selectedPoint.payload?.token_count || '?'} tokens`"></div>
+              </div>
+              <template x-if="explorerTarget(selectedPoint)">
+                <button @click="openInExplorer(selectedPoint)" class="btn-ghost flex-shrink-0">Open in Explorer</button>
+              </template>
+            </div>
+
+            <!-- Wiki prose -->
+            <template x-if="isWiki(selectedPoint)">
+              <div class="prose-dark bg-gray-900 border border-gray-800 rounded-lg p-3 mb-4" x-html="md(selectedPoint.payload?.text_content || '')"></div>
+            </template>
+
+            <!-- Code block -->
+            <template x-if="!isWiki(selectedPoint)">
+              <div class="relative group mb-4">
+                <button
+                  @click="copyToClipboard(selectedPoint.payload?.text_content || '').then(ok => {copied=ok; setTimeout(()=>copied=false,2000)})"
+                  class="absolute top-2 right-2 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 px-2 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                  x-text="copied ? '✓ Copied' : 'Copy'"
+                ></button>
+                <pre><code :class="`language-${hljsLang(selectedPoint.payload?.language, false)}`" data-highlight x-text="selectedPoint.payload?.text_content || ''"></code></pre>
+              </div>
+            </template>
+
+            <!-- Metadata -->
+            <div class="grid grid-cols-2 gap-2 text-xs">
+              <template x-if="(selectedPoint.payload?.imports || []).length">
+                <div class="col-span-2">
+                  <div class="text-gray-500 mb-1">Imports</div>
+                  <div class="flex flex-wrap gap-1">
+                    <template x-for="imp in chipList(selectedPoint.payload.imports)" :key="imp">
+                      <span class="bg-gray-800 text-gray-300 px-1.5 py-0.5 rounded font-mono text-xs" x-text="imp"></span>
+                    </template>
+                  </div>
+                </div>
+              </template>
+              <template x-if="(selectedPoint.payload?.symbols_defined || []).length">
+                <div class="col-span-2">
+                  <div class="text-gray-500 mb-1">Symbols</div>
+                  <div class="flex flex-wrap gap-1">
+                    <template x-for="sym in chipList(selectedPoint.payload.symbols_defined)" :key="sym">
+                      <span class="bg-blue-900 text-blue-300 px-1.5 py-0.5 rounded font-mono text-xs" x-text="sym"></span>
+                    </template>
+                  </div>
+                </div>
+              </template>
+              <template x-if="(selectedPoint.payload?.call_sites || []).length">
+                <div class="col-span-2">
+                  <div class="text-gray-500 mb-1">Call Sites</div>
+                  <div class="flex flex-wrap gap-1">
+                    <template x-for="cs in chipList(selectedPoint.payload.call_sites)" :key="cs">
+                      <span class="bg-purple-900 text-purple-300 px-1.5 py-0.5 rounded font-mono text-xs" x-text="cs"></span>
+                    </template>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+  </div>
+</div>

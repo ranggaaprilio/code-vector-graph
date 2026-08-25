@@ -12,11 +12,14 @@ Relationships use source_id/target_id format matching GraphStore expectations.
 from __future__ import annotations
 
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from tree_sitter import Tree
 
 from code_vector_graph.parsing.parser import extract_ast_metadata
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from code_vector_graph.repos import RepoIdentity
 
 NAMESPACE = uuid.NAMESPACE_URL
 
@@ -39,11 +42,15 @@ def _rel(rel_type: str, source_id: str, target_id: str,
 
 
 def extract_graph_entities(tree: Tree, source_bytes: bytes, file_path: str,
-                           language: str, file_hash: str) -> Dict[str, List[Dict[str, Any]]]:
+                           language: str, file_hash: str,
+                           repo: "RepoIdentity | None" = None) -> Dict[str, List[Dict[str, Any]]]:
     """Extract graph entities from a Tree-sitter AST.
 
     Returns dict with 'nodes' and 'relationships' lists. Nodes conform to
     graph_schema.py NODE_PROPERTIES. Relationships use source_id/target_id.
+
+    ``repo`` (optional) stamps the File node with ``app`` / ``repo`` /
+    ``rel_path``; node ids are unaffected so re-indexing stays idempotent.
     """
     if tree is None or source_bytes is None:
         return {"nodes": [], "relationships": []}
@@ -77,6 +84,9 @@ def extract_graph_entities(tree: Tree, source_bytes: bytes, file_path: str,
             "line_count": total_lines,
             "imports": file_imports,
             "exports": file_exports,
+            "app": repo.app if repo is not None else None,
+            "repo": repo.name if repo is not None else None,
+            "rel_path": repo.rel_path(file_path) if repo is not None else None,
         },
     })
 

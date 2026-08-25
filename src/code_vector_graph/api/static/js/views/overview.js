@@ -1,6 +1,7 @@
-// Overview / Health view
+// System view (health, collection, graph stats) — formerly "Overview".
 import { getHealth, getCollection, getGraphStats } from "../api.js";
 import { labelColor } from "../lib/format.js";
+import { bindLazyView } from "../lib/lazy.js";
 
 export function overviewView() {
   return {
@@ -9,21 +10,47 @@ export function overviewView() {
     graphStats: null,
     loading: true,
     error: null,
+    _activated: false,
+    _stale: false,
 
-    async init() {
-      await this.load();
+    init() {
+      bindLazyView(this, "overview");
     },
+
+    activate() {
+      if (!this._activated || this._stale) {
+        this._activated = true;
+        this._stale = false;
+        this.load();
+      }
+      this.consumePrefill();
+    },
+
+    onScopeChange() {
+      if (this.$store.app.screen === "overview") this.load();
+      else this._stale = true;
+    },
+
+    consumePrefill() { /* nothing to prefill */ },
+
+    get store() { return this.$store.app; },
+    get appCount() { return (this.store.apps || []).length; },
+    get repoCount() { return this.store.allRepos.length; },
 
     async load() {
       this.loading = true;
       this.error = null;
       try {
-        const [h, c, g] = await Promise.all([getHealth(), getCollection(), getGraphStats()]);
+        const [h, c, g] = await Promise.all([
+          getHealth(),
+          getCollection(),
+          getGraphStats(this.store.scopeParams()),
+        ]);
         this.health = h;
         this.collection = c;
         this.graphStats = g;
       } catch (e) {
-        this.error = String(e);
+        this.error = String(e?.message || e);
       }
       this.loading = false;
     },

@@ -92,9 +92,36 @@ def _parse_page(path: Path, bundle_root: Path) -> Optional[dict]:
         fm = yaml.safe_load(parts[1]) or {}
     except yaml.YAMLError:
         return None
-    if not isinstance(fm, dict) or "type" not in fm or "okf_version" in fm:
+    if not isinstance(fm, dict) or "type" not in fm:
         return None
     body = parts[2]
+    repo = fm.get("repo") or None
+    app = fm.get("app") or None
+
+    if "okf_version" in fm:
+        # The root index is the Repository page: accepted only at the bundle
+        # root and only when it declares type: Repository. Its Architecture
+        # Overview becomes the WikiPage that DOCUMENTS the Repository node.
+        if path.parent.resolve() != bundle_root.resolve() or fm.get("type") != "Repository":
+            return None
+        return {
+            "path": "index",
+            "concept_id": fm.get("node_id", "") or "",
+            "type": "Repository",
+            "title": fm.get("title", "") or repo or "index",
+            "summary": fm.get("description", "") or "",
+            "overview": _section(body, "Architecture Overview"),
+            "how_it_works": _section(body, "How it fits together"),
+            "tags": [],
+            "resource": "",
+            "source": fm.get("source", "llm") or "llm",
+            "file_path": "",
+            "language": "",
+            "related_paths": [],
+            "repo": repo,
+            "app": app,
+        }
+
     rel_path = path.relative_to(bundle_root).as_posix()
     concept_path = rel_path[:-3] if rel_path.endswith(".md") else rel_path
     resource = fm.get("resource", "") or ""
@@ -112,6 +139,8 @@ def _parse_page(path: Path, bundle_root: Path) -> Optional[dict]:
         "file_path": resource.split("#")[0],
         "language": _language_from_path(resource),
         "related_paths": _related_links(body),
+        "repo": repo,
+        "app": app,
     }
 
 
@@ -121,7 +150,10 @@ def parse_bundle(bundle_dir: str) -> list[dict]:
     concepts: list[dict] = []
     for md in sorted(root.rglob("*.md")):
         if md.name in RESERVED:
-            continue
+            # Per-directory listings and log.md are skipped; the root index.md is
+            # the Repository page (see _parse_page) and is the one exception.
+            if md.name != "index.md" or md.parent.resolve() != root.resolve():
+                continue
         parsed = _parse_page(md, root)
         if parsed:
             concepts.append(parsed)
@@ -166,10 +198,16 @@ def build_wiki_graph(concepts: list[dict]) -> tuple[list[dict], list[dict], dict
                 "tags": [t for t in (c.get("tags") or []) if isinstance(t, str)],
                 "resource": c.get("resource") or "",
                 "source": c.get("source") or "llm",
+                "repo": c.get("repo") or None,
+                "app": c.get("app") or None,
+                "how_it_works": c.get("how_it_works") or None,
             },
         })
         node_labels[wid] = "WikiPage"
-        node_labels.setdefault(cid, c["type"])  # documented code node label
+        if c["type"] == "Repository":
+            node_labels[cid] = "Repository"
+        else:
+            node_labels.setdefault(cid, c["type"])  # documented code node label
         rels.append(_rel("DOCUMENTS", wid, cid))
         for rp in c.get("related_paths", []):
             tgt = by_path.get(rp)
@@ -232,6 +270,8 @@ def build_wiki_chunks(concepts: list[dict], tokenizer_name: str, chunk_size: int
             ch["term"] = c.get("title")
             ch["summary"] = c.get("summary")
             ch["symbol_id"] = c.get("concept_id")
+            ch["repo"] = c.get("repo")
+            ch["app"] = c.get("app")
             chunks.append(ch)
     return chunks
 

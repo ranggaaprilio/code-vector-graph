@@ -1,11 +1,8 @@
-// Graph explorer view
-import { getNodes, getSubgraph, runCypher, getGraphStats } from "../api.js";
-import { labelColor, copyToClipboard } from "../lib/format.js";
-
-const NODE_LABELS = [
-  "File","Module","Class","Interface","TypeAlias","Function","Method",
-  "Field","Variable","Import","Chunk","GlossaryEntry",
-];
+// Graph explorer view — Cytoscape canvas + read-only Cypher, scoped to the
+// active application/repository.
+import { getNodes, getSubgraph, runCypher } from "../api.js";
+import { labelColor, copyToClipboard, NODE_LABELS, renderMarkdown } from "../lib/format.js";
+import { bindLazyView } from "../lib/lazy.js";
 
 export function graphView() {
   return {
@@ -13,7 +10,6 @@ export function graphView() {
 
     // Controls
     selectedLabel: "Function",
-    nodeSearch: "",
     depth: 1,
 
     // Cypher box
@@ -32,9 +28,52 @@ export function graphView() {
 
     labels: NODE_LABELS,
 
+    _activated: false,
+    _stale: false,
+
     init() {
-      this.$nextTick(() => this.initCytoscape());
+      bindLazyView(this, "graph");
     },
+
+    activate() {
+      if (!this._activated) {
+        this._activated = true;
+        this.$nextTick(() => this.initCytoscape());
+      } else if (this._stale) {
+        this._stale = false;
+        this.cy?.resize();
+      }
+      this.consumePrefill();
+    },
+
+    onScopeChange() {
+      if (this.store.screen === "graph") {
+        this.clearGraph();
+        this.statusMsg = `Scope changed to ${this.store.scopeLabel}`;
+      } else {
+        this._stale = true;
+      }
+    },
+
+    /** Focus a specific node handed off from another view (e.g. Files -> "Open in Graph"). */
+    async consumePrefill() {
+      const p = this.store.prefill.graph;
+      if (!p) return;
+      this.store.prefill.graph = null;
+      if (p.node_id) {
+        this.addToCy([{
+          id: p.node_id,
+          label: p.label || "File",
+          caption: p.caption || p.node_id.slice(0, 20),
+          properties: { path: p.file_path },
+          color: labelColor(p.label || "File").cy,
+        }], []);
+        await this.expandNode(p.node_id);
+        this.cy?.getElementById(p.node_id)?.select();
+      }
+    },
+
+    get store() { return this.$store.app; },
 
     initCytoscape() {
       const container = document.getElementById("cy-canvas");
@@ -80,6 +119,7 @@ export function graphView() {
         layout: { name: "cose" },
         wheelSensitivity: 0.3,
       });
+      this.cy.resize();
 
       this.cy.on("tap", "node", (evt) => {
         const node = evt.target;
@@ -94,6 +134,7 @@ export function graphView() {
     },
 
     labelColor(label) { return labelColor(label); },
+    md(text) { return renderMarkdown(text); },
 
     async loadLabel() {
       if (!this.selectedLabel) return;
@@ -101,8 +142,8 @@ export function graphView() {
       this.error = null;
       this.statusMsg = `Loading ${this.selectedLabel} nodes…`;
       try {
-        const data = await getNodes(this.selectedLabel, 80);
-        this.addToCy(data.nodes.map(n => ({
+        const data = await getNodes(this.selectedLabel, 80, 0, this.store.scopeParams());
+        this.addToCy(data.nodes.map((n) => ({
           id: n.id,
           label: this.selectedLabel,
           caption: n.properties.name || n.properties.path || n.id.slice(0, 12),
@@ -111,7 +152,7 @@ export function graphView() {
         })), []);
         this.statusMsg = `Loaded ${data.nodes.length} ${this.selectedLabel} nodes`;
       } catch (e) {
-        this.error = String(e);
+        this.error = String(e?.message || e);
       }
       this.loading = false;
     },
@@ -121,7 +162,7 @@ export function graphView() {
       this.statusMsg = "Expanding…";
       try {
         const data = await getSubgraph(nodeId, this.depth, 80);
-        const nodes = data.nodes.map(n => ({
+        const nodes = data.nodes.map((n) => ({
           id: n.id,
           label: n.label,
           caption: n.caption,
@@ -131,25 +172,35 @@ export function graphView() {
         this.addToCy(nodes, data.edges);
         this.statusMsg = `Expanded: +${data.nodes.length} nodes, +${data.edges.length} edges`;
       } catch (e) {
-        this.error = String(e);
+        this.error = String(e?.message || e);
       }
       this.loading = false;
     },
 
+    /**
+     * Merge nodes ({id,label,caption,properties,color}) and edges ({id,from,to,type})
+     * into the canvas. Edges are only added once both endpoints exist (counting the
+     * nodes added in this same batch) and are mapped to Cytoscape's source/target.
+     */
     addToCy(nodes, edges) {
-      const existingIds = new Set(this.cy.nodes().map(n => n.id()));
-      const existingEdgeIds = new Set(this.cy.edges().map(e => e.id()));
+      if (!this.cy) return;
+      const ids = new Set(this.cy.nodes().map((n) => n.id()));
+      const edgeIds = new Set(this.cy.edges().map((e) => e.id()));
 
       const newElements = [];
-      for (const n of nodes) {
-        if (!existingIds.has(n.id)) {
-          newElements.push({ group: "nodes", data: n });
-        }
+      for (const n of nodes || []) {
+        if (!n?.id || ids.has(n.id)) continue;
+        ids.add(n.id);
+        newElements.push({ group: "nodes", data: n });
       }
-      for (const e of edges) {
-        if (!existingEdgeIds.has(e.id) && existingIds.has(e.from) || !existingIds.has(e.from)) {
-          newElements.push({ group: "edges", data: e });
-        }
+      for (const e of edges || []) {
+        if (!e) continue;
+        const source = e.from ?? e.source;
+        const target = e.to ?? e.target;
+        const id = e.id || `${source}->${e.type || "REL"}->${target}`;
+        if (edgeIds.has(id) || !ids.has(source) || !ids.has(target)) continue;
+        edgeIds.add(id);
+        newElements.push({ group: "edges", data: { id, source, target, type: e.type } });
       }
       if (newElements.length) {
         this.cy.add(newElements);
@@ -172,7 +223,7 @@ export function graphView() {
       try {
         this.cypherResults = await runCypher(this.cypherQuery, {}, 200);
       } catch (e) {
-        this.cypherError = String(e);
+        this.cypherError = String(e?.message || e);
       }
       this.cypherLoading = false;
     },
@@ -218,6 +269,19 @@ export function graphView() {
       if (Array.isArray(v)) return v.join(", ") || "(empty)";
       if (v === null || v === undefined) return "(null)";
       return String(v);
+    },
+
+    /** Explorer / wiki hand-off for the selected node's inspector panel. */
+    openSelectedInExplorer() {
+      const props = this.selectedNode?.properties;
+      if (!props?.path) return;
+      this.store.openInExplorer({ file_path: props.path, repo: props.repo, rel_path: props.rel_path });
+    },
+
+    openSelectedWikiPage() {
+      const props = this.selectedNode?.properties;
+      if (!props?.concept_id) return;
+      this.store.openWikiPage(props.concept_id, { repo: props.repo });
     },
   };
 }

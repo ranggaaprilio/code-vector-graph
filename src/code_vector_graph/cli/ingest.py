@@ -36,6 +36,7 @@ Examples:
   %(prog)s --repo-path ./my-project
   %(prog)s --repo-path ./my-project --dry-run --verbose
   %(prog)s --repo-path ./my-project --qdrant-url http://localhost:6333
+  %(prog)s --repo-path ~/Repository/onebid/backend/api --repo-name api --app-name onebid
         """.strip(),
     )
 
@@ -44,6 +45,26 @@ Examples:
         type=str,
         required=True,
         help="Path to repository to process (required)",
+    )
+
+    parser.add_argument(
+        "--repo-name",
+        type=str,
+        default=None,
+        help=(
+            "Repository name recorded on every chunk / File node "
+            "(default: basename of the resolved --repo-path)"
+        ),
+    )
+
+    parser.add_argument(
+        "--app-name",
+        type=str,
+        default=None,
+        help=(
+            "Application the repository belongs to (default: first path component "
+            "below CVG_REPOS_ROOT when set, otherwise the repo name)"
+        ),
     )
 
     parser.add_argument(

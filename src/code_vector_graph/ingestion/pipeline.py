@@ -3,6 +3,7 @@
 import gc
 import logging
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 import torch
@@ -12,6 +13,7 @@ load_dotenv()
 
 from code_vector_graph.parsing.chunker import chunk_text
 from code_vector_graph.config import (
+    CVG_REPOS_ROOT,
     NEO4J_PASSWORD,
     NEO4J_URI,
     NEO4J_USER,
@@ -24,6 +26,7 @@ from code_vector_graph.parsing.glossary import (
     load_manual_glossary,
 )
 from code_vector_graph.parsing.graph_extractor import extract_graph_entities
+from code_vector_graph.repos import RepoIdentity, resolve_repo_identity
 from code_vector_graph.stores.graph_store import GraphStore
 from code_vector_graph.parsing.parser import extract_ast_metadata, parse_file
 from code_vector_graph.parsing.scanner import discover_files
@@ -33,6 +36,43 @@ logger = logging.getLogger(__name__)
 
 # Batch size for file processing to control memory usage
 FILE_BATCH_SIZE = 50
+
+
+def _stamp_repo(chunk: dict, repo: RepoIdentity) -> dict:
+    """Record the application / repository identity on a chunk payload."""
+    chunk["app"] = repo.app
+    chunk["repo"] = repo.name
+    chunk["repo_root"] = repo.root
+    chunk["rel_path"] = repo.rel_path(chunk.get("file_path", "") or "")
+    return chunk
+
+
+def repo_graph_entities(repo: RepoIdentity, file_ids: list[str], indexed_at: str) -> dict:
+    """Application + Repository nodes and their CONTAINS edges for one batch.
+
+    Emitted on every graph flush; MERGE makes the repetition idempotent.
+    """
+    nodes = [
+        {"label": "Application", "id": repo.app_id, "properties": {"name": repo.app}},
+        {
+            "label": "Repository",
+            "id": repo.id,
+            "properties": {
+                "name": repo.name,
+                "root": repo.root,
+                "app": repo.app,
+                "indexed_at": indexed_at,
+            },
+        },
+    ]
+    relationships = [
+        {"type": "CONTAINS", "source_id": repo.app_id, "target_id": repo.id, "properties": {}},
+    ]
+    for fid in file_ids:
+        relationships.append(
+            {"type": "CONTAINS", "source_id": repo.id, "target_id": fid, "properties": {}}
+        )
+    return {"nodes": nodes, "relationships": relationships}
 
 
 def check_qdrant_health(store: VectorStore) -> bool:
@@ -102,6 +142,21 @@ def run_pipeline(args) -> dict:
     if not files:
         logger.warning("No files found to process")
         return stats
+
+    # Application / repository identity recorded on every chunk and File node.
+    repo = resolve_repo_identity(
+        args.repo_path,
+        getattr(args, "repo_name", None),
+        getattr(args, "app_name", None),
+        CVG_REPOS_ROOT,
+    )
+    run_started_iso = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    logger.info(
+        f"Repository identity: app={repo.app!r} repo={repo.name!r} root={repo.root} "
+        f"(repo_id={repo.id}, app_id={repo.app_id})"
+    )
+    stats["app"] = repo.app
+    stats["repo"] = repo.name
 
     model_config = get_model_config(args.model)
     dimensions = model_config["dimensions"]
@@ -211,6 +266,7 @@ def run_pipeline(args) -> dict:
                     file_path,
                     language,
                     file_hash,
+                    repo=repo,
                 )
                 comment_glossary_entries = extract_comment_glossary(
                     parsed["tree"],
@@ -265,6 +321,7 @@ def run_pipeline(args) -> dict:
                 metadata = chunk.pop("metadata", {})
                 chunk.update(metadata)
                 chunk["text_content"] = chunk["text"]
+                _stamp_repo(chunk, repo)
 
                 if graph_data is not None:
                     chunk_id = store._generate_deterministic_id(
@@ -295,6 +352,7 @@ def run_pipeline(args) -> dict:
                             "token_count": chunk.get("token_count", 0),
                             "decorators": chunk.get("decorators", []),
                             "file_hash": chunk.get("file_hash", ""),
+                            "repo": repo.name,
                         }
                     }
                     chunk_nodes.append(chunk_node)
@@ -310,6 +368,9 @@ def run_pipeline(args) -> dict:
                 if graph_store:
                     batch_graph_data.append(graph_data)
                     stats["files_graphed"] += 1
+
+            for gchunk in glossary_chunks:
+                _stamp_repo(gchunk, repo)
 
             batch_code_chunks_created += len(chunks)
             batch_chunks.extend(chunks)
@@ -382,8 +443,17 @@ def run_pipeline(args) -> dict:
             # upsert_relationships call instead of one transaction per file.
             # Both methods already chunk internally (BATCH_SIZE) and group by
             # label/type, so this collapses dozens of round-trips into a few.
-            all_nodes = []
-            all_relationships = []
+            # Application / Repository nodes lead the batch so CONTAINS edges
+            # from Repository -> File can resolve within the same upsert.
+            file_ids = [
+                n["id"]
+                for graph_data in batch_graph_data
+                for n in graph_data["nodes"]
+                if n.get("label") == "File" and n.get("id")
+            ]
+            repo_graph = repo_graph_entities(repo, file_ids, run_started_iso)
+            all_nodes = list(repo_graph["nodes"])
+            all_relationships = list(repo_graph["relationships"])
             for graph_data in batch_graph_data:
                 all_nodes.extend(graph_data["nodes"])
                 all_relationships.extend(graph_data["relationships"])

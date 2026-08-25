@@ -68,14 +68,16 @@ docker-compose ps neo4j                   # Neo4j status
 You must download the model you plan to use before running the pipeline. The script supports both models:
 
 ```bash
-# Download the default Nomic model (~2GB):
+# Download the default Nomic model (~28GB on disk — 7B params in fp32):
 cvg-download-model
 
-# Or download the Jina model (~3GB):
+# Or download the Jina model (~3GB, recommended for laptops):
 cvg-download-model --model jina
 ```
 
-Models are cached in `~/.cache/huggingface/` for subsequent runs.
+Models are cached in `~/.cache/huggingface/` for subsequent runs. Add
+`--no-smoke-test` to only fetch the files without loading the weights into RAM
+(useful in CI or on low-memory machines).
 
 ### 7. Index a repository
 

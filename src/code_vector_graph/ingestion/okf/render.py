@@ -21,6 +21,7 @@ from typing import Optional
 import yaml
 
 from code_vector_graph.ingestion.okf.skeleton import Skeleton, concept_name, dir_for_label
+from code_vector_graph.repos import RepoIdentity
 
 logger = logging.getLogger(__name__)
 
@@ -90,7 +91,15 @@ def _tags(node: dict, enrichment: dict) -> list[str]:
     return out
 
 
-def _frontmatter(node: dict, enrichment: dict, repo_base_url: Optional[str], repo_root: Optional[str], timestamp: str) -> str:
+def _frontmatter(
+    node: dict,
+    enrichment: dict,
+    repo_base_url: Optional[str],
+    repo_root: Optional[str],
+    timestamp: str,
+    repo_name: Optional[str] = None,
+    app_name: Optional[str] = None,
+) -> str:
     props = node.get("properties", {}) or {}
     fm: dict = {
         "type": node.get("label", "Concept"),
@@ -103,6 +112,8 @@ def _frontmatter(node: dict, enrichment: dict, repo_base_url: Optional[str], rep
         "start_line": props.get("start_line"),
         "end_line": props.get("end_line"),
         "source": "llm",
+        "repo": repo_name,
+        "app": app_name,
     }
     fm = {k: v for k, v in fm.items() if v not in (None, "", [], {})}
     body = yaml.safe_dump(fm, sort_keys=False, allow_unicode=True, default_flow_style=False)
@@ -190,8 +201,17 @@ def _relationships(skeleton: Skeleton, node: dict, enrichment: dict) -> str:
     return "\n".join(out).rstrip() + "\n"
 
 
-def render_page(skeleton: Skeleton, node: dict, enrichment: dict, repo_base_url: Optional[str], repo_root: Optional[str], timestamp: str) -> str:
-    parts = [_frontmatter(node, enrichment, repo_base_url, repo_root, timestamp)]
+def render_page(
+    skeleton: Skeleton,
+    node: dict,
+    enrichment: dict,
+    repo_base_url: Optional[str],
+    repo_root: Optional[str],
+    timestamp: str,
+    repo_name: Optional[str] = None,
+    app_name: Optional[str] = None,
+) -> str:
+    parts = [_frontmatter(node, enrichment, repo_base_url, repo_root, timestamp, repo_name, app_name)]
     parts.append(f"# {concept_name(node)}\n")
 
     if enrichment.get("summary"):
@@ -224,12 +244,40 @@ def _render_dir_index(label: str, entries: list[tuple[str, str]]) -> str:
     return "\n".join(out) + "\n"
 
 
-def _render_root_index(skeleton: Skeleton, overview: dict, counts: dict[str, int], timestamp: str) -> str:
-    fm = yaml.safe_dump({"okf_version": OKF_VERSION}, sort_keys=False, allow_unicode=True)
-    repo_name = Path(skeleton.repo_path).resolve().name or skeleton.repo_path
+def _render_root_index(
+    skeleton: Skeleton,
+    overview: dict,
+    counts: dict[str, int],
+    timestamp: str,
+    repo_name: Optional[str] = None,
+    app_name: Optional[str] = None,
+    repo_root: Optional[str] = None,
+) -> str:
+    """Root ``index.md``: the Repository page.
+
+    Besides ``okf_version`` the frontmatter now carries ``type: Repository`` and
+    the repo/app identity, so `cvg-okf-sync` can turn it into a WikiPage that
+    DOCUMENTS the Repository node (see repos.RepoIdentity).
+    """
+    repo_name = repo_name or Path(skeleton.repo_path).resolve().name or skeleton.repo_path
+    app_name = app_name or repo_name
+    root = repo_root or skeleton.repo_path
+    identity = RepoIdentity(app=app_name, name=repo_name, root=str(Path(root).resolve()) if root else "")
+    fm_dict = {
+        "okf_version": OKF_VERSION,
+        "type": "Repository",
+        "title": repo_name,
+        "repo": repo_name,
+        "app": app_name,
+        "node_id": identity.id,
+        "description": overview.get("summary", "") or "",
+        "source": "llm",
+        "timestamp": timestamp,
+    }
+    fm = yaml.safe_dump(fm_dict, sort_keys=False, allow_unicode=True, default_flow_style=False)
     parts = [f"---\n{fm}---\n", f"# {repo_name} — Code Wiki\n"]
     if overview.get("summary"):
-        parts.append(f"{overview['summary']}\n")
+        parts.append(f"# Summary\n\n{overview['summary']}\n")
     if overview.get("overview"):
         parts.append(f"# Architecture Overview\n\n{overview['overview']}\n")
     if overview.get("how_it_works"):
@@ -273,12 +321,20 @@ def write_bundle(
     repo_root: Optional[str] = None,
     stats: Optional[dict] = None,
     timestamp: Optional[str] = None,
+    repo_name: Optional[str] = None,
+    app_name: Optional[str] = None,
 ) -> dict:
-    """Write the full OKF bundle. Returns a counts dict."""
+    """Write the full OKF bundle. Returns a counts dict.
+
+    ``repo_name`` / ``app_name`` are recorded in every page's frontmatter and on
+    the root index (the Repository page); they default to the repo directory name.
+    """
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     repo_root = repo_root or skeleton.repo_path
     timestamp = timestamp or _now_iso()
+    repo_name = repo_name or Path(skeleton.repo_path).resolve().name or skeleton.repo_path
+    app_name = app_name or repo_name
 
     counts: dict[str, int] = {}
     dir_entries: dict[str, list[tuple[str, str]]] = {}
@@ -290,7 +346,7 @@ def write_bundle(
             continue
         enrichment = enrichments.get(nid) or {}
         rel_path = skeleton.id_to_path[nid]  # e.g. "function/foo-1a2b3c4d"
-        page = render_page(skeleton, node, enrichment, repo_base_url, repo_root, timestamp)
+        page = render_page(skeleton, node, enrichment, repo_base_url, repo_root, timestamp, repo_name, app_name)
         file_path = out / f"{rel_path}.md"
         file_path.parent.mkdir(parents=True, exist_ok=True)
         file_path.write_text(page, encoding="utf-8")
@@ -308,7 +364,10 @@ def write_bundle(
         )
 
     # Root index.md + log.md
-    (out / "index.md").write_text(_render_root_index(skeleton, overview, counts, timestamp), encoding="utf-8")
+    (out / "index.md").write_text(
+        _render_root_index(skeleton, overview, counts, timestamp, repo_name, app_name, repo_root),
+        encoding="utf-8",
+    )
     log_stats = dict(stats or {})
     log_stats["counts"] = counts
     (out / "log.md").write_text(_render_log(skeleton, log_stats, timestamp), encoding="utf-8")

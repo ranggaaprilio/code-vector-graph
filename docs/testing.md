@@ -30,12 +30,12 @@ real multi-GB models and hit live services. Run one explicitly when you want it:
 pytest tests/manual/test_jina_embedder.py -v
 ```
 
-## Known failing test
+## Syntax errors are tolerated by design
 
-`tests/parsing/test_parser.py::test_parse_error_returns_none` fails, and has
-since the initial commit. It asserts that `parse_file()` returns `None` for
-syntactically invalid input, but that check was never implemented — Tree-sitter
-is error-tolerant by design and returns a tree containing ERROR nodes rather
-than raising. Whether the indexer *should* skip files with syntax errors is an
-open question: doing so would also drop files using syntax the pinned grammar
-does not recognise.
+`tests/parsing/test_parser.py::test_parse_error_is_tolerated` pins the
+behaviour of `parse_file()` on syntactically invalid input: it returns a parsed
+result (with a warning logged), not `None`. Tree-sitter is error-tolerant and
+returns a tree containing ERROR nodes, so the recoverable functions/classes in
+the file are still chunked and graphed. Skipping such files wholesale would also
+drop valid files whose syntax the pinned grammar does not recognise (Flow
+annotations, `import ... assert { type: 'json' }`, etc.).
