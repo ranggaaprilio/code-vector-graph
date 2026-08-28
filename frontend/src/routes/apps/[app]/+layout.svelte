@@ -100,7 +100,7 @@
 	}
 
 	.error {
-		color: var(--color-primary);
+		color: var(--color-danger);
 		padding: 0 var(--space-lg);
 	}
 

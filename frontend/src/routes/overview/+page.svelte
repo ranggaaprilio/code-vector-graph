@@ -81,7 +81,7 @@
 	});
 </script>
 
-<SectionEyebrow title="SYSTEM" tint="steel" />
+<SectionEyebrow title="System" tint="steel" />
 
 <div class="page-content">
 	<p class="ds-caption scope-line">Scope: {appStore.scopeLabelText}</p>
@@ -246,8 +246,9 @@
 
 	.error-banner {
 		border: var(--border-hairline);
+		border-radius: var(--radius-md);
 		padding: var(--space-sm) var(--space-md);
-		color: var(--color-primary);
+		color: var(--color-danger);
 	}
 
 	/* auto-fit reflows off the *container* width, so the grid is right whether the
@@ -318,6 +319,8 @@
 		flex: 1;
 		height: 10px;
 		border: var(--border-hairline);
+		border-radius: var(--radius-full);
+		overflow: hidden;
 		background: var(--color-canvas);
 	}
 

@@ -180,7 +180,7 @@
 	});
 </script>
 
-<SectionEyebrow title="VECTOR SEARCH" tint="sky" />
+<SectionEyebrow title="Vector Search" tint="sky" />
 
 <div class="vectors-page">
 	<div class="filters">
@@ -467,7 +467,7 @@
 	}
 
 	.status-row .error {
-		color: var(--color-primary);
+		color: var(--color-danger);
 	}
 
 	.body {
@@ -549,7 +549,8 @@
 
 	.repo-chip {
 		border: var(--border-hairline);
-		padding: 1px var(--space-xs);
+		border-radius: var(--radius-sm);
+		padding: 2px var(--space-xs);
 	}
 
 	.score {
@@ -620,6 +621,7 @@
 
 	.wiki-body {
 		border: var(--border-hairline);
+		border-radius: var(--radius-lg);
 		background: var(--color-page-backdrop);
 		padding: var(--space-md);
 		margin-bottom: var(--space-lg);
@@ -664,7 +666,8 @@
 		z-index: 1;
 		background: var(--color-canvas);
 		border: var(--border-hairline);
-		padding: 1px var(--space-xs);
+		border-radius: var(--radius-sm);
+		padding: 2px var(--space-xs);
 		cursor: pointer;
 		color: var(--color-ink);
 	}

@@ -530,7 +530,7 @@
 	}
 
 	.error {
-		color: var(--color-primary);
+		color: var(--color-danger);
 		padding: var(--space-sm);
 	}
 
@@ -622,6 +622,7 @@
 
 	.chunk {
 		border: var(--border-hairline);
+		border-radius: var(--radius-md);
 	}
 
 	.chunk-active {

@@ -7,7 +7,7 @@
 		children
 	}: {
 		title?: string;
-		/** `card` = framed block (Design.md ex-empty-state-card); `bare` = a quiet inline line. */
+		/** `card` = framed rounded block; `bare` = a quiet inline line. */
 		tone?: 'card' | 'bare';
 		children?: Snippet;
 	} = $props();
@@ -26,6 +26,7 @@
 	.empty.card {
 		background: var(--color-canvas);
 		border: var(--border-hairline);
+		border-radius: var(--radius-lg);
 		padding: var(--space-xl);
 	}
 
@@ -44,8 +45,8 @@
 		font-family: var(--font-mono);
 		font-size: var(--type-body-sm-size);
 		background: var(--color-row-zebra);
-		border: var(--border-hairline);
-		padding: 0 var(--space-xxs);
+		border-radius: var(--radius-xs);
+		padding: 1px 5px;
 	}
 
 	.body :global(p + p) {

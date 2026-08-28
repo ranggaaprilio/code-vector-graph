@@ -121,7 +121,7 @@
 	}
 </script>
 
-<SectionEyebrow title="APPLICATIONS" tint="olive" />
+<SectionEyebrow title="Applications" tint="olive" />
 
 <div class="toolbar">
 	<span class="ds-caption count">{filtered.length} of {apps.length} applications</span>
@@ -293,6 +293,7 @@
 
 	.error-banner {
 		border: var(--border-hairline);
+		border-radius: var(--radius-md);
 		background: var(--tint-salmon);
 		color: var(--color-ink);
 		padding: var(--space-sm) var(--space-md);
@@ -318,6 +319,7 @@
 
 	.skeleton-card {
 		border: var(--border-hairline);
+		border-radius: var(--radius-lg);
 		background: var(--color-canvas);
 		padding: var(--space-md) var(--space-lg);
 		display: flex;
@@ -332,6 +334,7 @@
 	.code-block {
 		background: var(--color-page-backdrop);
 		border: var(--border-hairline);
+		border-radius: var(--radius-md);
 		padding: var(--space-sm);
 		overflow-x: auto;
 	}
@@ -368,9 +371,10 @@
 
 	.derived-tag {
 		border: var(--border-hairline);
+		border-radius: var(--radius-sm);
 		background: var(--color-canvas);
 		color: var(--color-ink-muted);
-		padding: 1px var(--space-xs);
+		padding: 2px var(--space-xs);
 		white-space: nowrap;
 	}
 
@@ -383,7 +387,8 @@
 	.repo-chip {
 		background: var(--color-canvas);
 		border: var(--border-hairline);
-		padding: 1px var(--space-xs);
+		border-radius: var(--radius-sm);
+		padding: 2px var(--space-xs);
 		cursor: pointer;
 		max-width: 100%;
 		overflow: hidden;
@@ -414,6 +419,7 @@
 		display: flex;
 		height: 6px;
 		border: var(--border-hairline);
+		border-radius: var(--radius-full);
 		overflow: hidden;
 		background: var(--color-canvas);
 	}

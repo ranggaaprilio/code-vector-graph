@@ -233,7 +233,7 @@
 
 <style>
 	.error {
-		color: var(--color-primary);
+		color: var(--color-danger);
 		padding: var(--space-lg);
 	}
 
@@ -372,6 +372,8 @@
 		flex: 1;
 		height: 6px;
 		border: var(--border-hairline);
+		border-radius: var(--radius-full);
+		overflow: hidden;
 		background: var(--color-canvas);
 	}
 

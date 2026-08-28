@@ -34,7 +34,6 @@
 	textarea {
 		font-family: inherit;
 		color: inherit;
-		border-radius: var(--radius-none);
 	}
 
 	img {
@@ -57,6 +56,7 @@
 		font-size: var(--type-body-size);
 		line-height: var(--type-body-lh);
 		text-rendering: optimizeLegibility;
+		-webkit-font-smoothing: antialiased;
 	}
 
 	a {
@@ -65,6 +65,12 @@
 
 	a:not(.ds-btn) {
 		text-decoration: underline;
+		text-decoration-color: color-mix(in oklab, var(--color-link) 40%, transparent);
+		text-underline-offset: 2px;
+	}
+
+	a:not(.ds-btn):hover {
+		text-decoration-color: var(--color-link);
 	}
 
 	/* One focus treatment for the whole app. Components must not redefine it. */
@@ -73,9 +79,11 @@
 		outline-offset: var(--focus-offset);
 	}
 
-	/* Inputs sit flush inside hairline chrome, so their ring goes inward. */
+	/* Inputs sit flush inside a hairline border, so their ring goes inward. */
 	.ds-input:focus-visible {
-		outline-offset: calc(-1 * var(--focus-ring-width));
+		outline: none;
+		border-color: var(--color-primary);
+		box-shadow: 0 0 0 1px var(--color-primary);
 	}
 }
 
@@ -86,7 +94,6 @@
 		font-size: var(--type-display-size);
 		font-weight: var(--type-display-weight);
 		line-height: var(--type-display-lh);
-		text-transform: uppercase;
 		letter-spacing: var(--type-display-tracking);
 		text-wrap: balance;
 	}
@@ -96,7 +103,7 @@
 		font-size: var(--type-h1-size);
 		font-weight: var(--type-h1-weight);
 		line-height: var(--type-h1-lh);
-		letter-spacing: var(--type-display-tracking);
+		letter-spacing: -0.01em;
 		text-wrap: balance;
 	}
 
@@ -105,7 +112,6 @@
 		font-size: var(--type-h2-size);
 		font-weight: var(--type-h2-weight);
 		line-height: var(--type-h2-lh);
-		text-transform: uppercase;
 	}
 
 	.ds-h3 {
@@ -113,7 +119,6 @@
 		font-size: var(--type-h3-size);
 		font-weight: var(--type-h3-weight);
 		line-height: var(--type-h3-lh);
-		text-transform: uppercase;
 	}
 
 	.ds-body-sm {
@@ -127,35 +132,39 @@
 		color: var(--color-ink-muted);
 	}
 
+	/* Small, tracked, uppercase micro-label — Notion reserves this for form
+	   labels and table headers, never for section headings. */
 	.ds-ui-label {
 		font-family: var(--font-heading);
 		font-size: var(--type-ui-label-size);
 		font-weight: var(--type-ui-label-weight);
 		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: var(--color-ink-muted);
 	}
 
 	.ds-mono {
 		font-family: var(--font-mono);
 	}
 
-	/* Shared chrome for text-input / textarea / select — text-input component
-	   from Design.md: white fill, 1px black border, Times Roman, zero radius. */
+	/* Shared chrome for text-input / textarea / select — Notion's text-input
+	   component: white fill, 1px hairline-strong border, 8px radius. */
 	.ds-input {
 		background: var(--color-canvas);
 		color: var(--color-ink);
-		border: var(--border-hairline);
-		border-radius: var(--radius-none);
+		border: 1px solid var(--color-hairline-strong);
+		border-radius: var(--radius-md);
 		font-family: var(--font-body);
 		font-size: var(--type-body-size);
-		padding: var(--space-xs) var(--space-s);
+		padding: var(--space-sm) var(--space-md);
 		width: 100%;
 		transition:
 			border-color var(--motion-fast) var(--ease-snap),
-			background-color var(--motion-fast) var(--ease-snap);
+			box-shadow var(--motion-fast) var(--ease-snap);
 	}
 
-	.ds-input:hover:not(:disabled) {
-		background: var(--color-row-hover);
+	.ds-input:hover:not(:disabled):not(:focus-visible) {
+		border-color: var(--color-ink-faint);
 	}
 
 	.ds-input:disabled {
@@ -163,38 +172,44 @@
 		cursor: not-allowed;
 	}
 
-	/* Graph node swatch: the same tint + angular shape pairing the canvas uses,
-	   so a legend entry and its node read as the same thing. Shapes are all
-	   angular — Design.md:281 forbids softened corners. */
+	/* Graph node swatch: the same tint + angular shape pairing the canvas
+	   uses, so a legend entry and its node read as the same thing. */
 	.ds-swatch {
 		display: inline-block;
 		width: 12px;
 		height: 12px;
-		border: var(--border-hairline);
+		border-radius: var(--radius-xs);
+		border: 1px solid rgb(0 0 0 / 0.08);
 		flex-shrink: 0;
 	}
 
 	.ds-swatch[data-shape='diamond'] {
+		border-radius: 0;
 		clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
 	}
 
 	.ds-swatch[data-shape='triangle'] {
+		border-radius: 0;
 		clip-path: polygon(50% 0, 100% 100%, 0 100%);
 	}
 
 	.ds-swatch[data-shape='hexagon'] {
+		border-radius: 0;
 		clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%);
 	}
 
 	.ds-swatch[data-shape='octagon'] {
+		border-radius: 0;
 		clip-path: polygon(30% 0, 70% 0, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0 70%, 0 30%);
 	}
 
 	.ds-swatch[data-shape='pentagon'] {
+		border-radius: 0;
 		clip-path: polygon(50% 0, 100% 38%, 82% 100%, 18% 100%, 0 38%);
 	}
 
 	.ds-swatch[data-shape='tag'] {
+		border-radius: 0;
 		clip-path: polygon(0 0, 70% 0, 100% 50%, 70% 100%, 0 100%);
 	}
 
@@ -204,12 +219,12 @@
 		left: var(--space-sm);
 		top: var(--space-sm);
 		z-index: 100;
-		background: var(--color-frame-ink);
-		color: var(--color-canvas);
+		background: var(--color-primary);
+		color: var(--color-on-primary);
 		font-family: var(--font-heading);
 		font-size: var(--type-button-size);
 		font-weight: var(--type-button-weight);
-		text-transform: uppercase;
+		border-radius: var(--radius-md);
 		text-decoration: none;
 		padding: var(--space-s) var(--space-md);
 		transform: translateY(-200%);
@@ -222,7 +237,7 @@
 
 @layer utilities {
 	/* Scrollable containers (code panes, tables, canvases) must never blow out
-	   the page frame — Design.md's fixed catalog layout has no room to spare. */
+	   the page layout. */
 	.ds-scroll-x {
 		overflow-x: auto;
 		overscroll-behavior-x: contain;
@@ -234,7 +249,7 @@
 	}
 
 	/* Prose blocks (markdown, wiki bodies, chat answers) get a real measure so
-	   Times Roman stays readable instead of running the full window width. */
+	   body copy stays readable instead of running the full window width. */
 	.ds-prose {
 		max-width: var(--measure);
 		text-wrap: pretty;
@@ -252,8 +267,8 @@
 	}
 }
 
-/* Mouse-only chrome was fine in 1996; touch was not a thing. Design.md:104
-   asks for 44x44 minimum on small screens. */
+/* Mouse-only chrome was fine once; touch is not optional now. 44x44 minimum
+   on small screens. */
 @media (max-width: 768px) {
 	@layer base {
 		button,

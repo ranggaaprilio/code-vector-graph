@@ -21,7 +21,7 @@
 	}
 </script>
 
-<div class="ds-scroll-x">
+<div class="ds-scroll-x table-wrap">
 	<table class="ds-table">
 		<thead>
 			<tr>
@@ -50,6 +50,11 @@
 </div>
 
 <style>
+	.table-wrap {
+		border: var(--border-hairline);
+		border-radius: var(--radius-lg);
+	}
+
 	.ds-table {
 		width: 100%;
 		border-collapse: collapse;
@@ -58,18 +63,20 @@
 	.ds-table th,
 	.ds-table td {
 		border-bottom: var(--border-hairline);
-		padding: var(--space-xs) var(--space-sm);
+		padding: var(--space-sm) var(--space-md);
 		text-align: left;
 		vertical-align: top;
 		white-space: nowrap;
 	}
 
 	.ds-table th {
-		background: var(--color-canvas);
+		background: var(--color-surface-soft);
 		position: sticky;
 		top: 0;
-		/* The header must stay legible over rows scrolling beneath it. */
-		box-shadow: 0 1px 0 var(--color-frame-ink);
+	}
+
+	.ds-table tbody tr:last-child td {
+		border-bottom: none;
 	}
 
 	.ds-table tbody tr:nth-child(even) {

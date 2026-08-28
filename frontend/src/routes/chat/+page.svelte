@@ -243,7 +243,7 @@
 	}
 </script>
 
-<SectionEyebrow title="AI CHAT" tint="salmon" />
+<SectionEyebrow title="AI Chat" tint="salmon" />
 
 <div class="chat">
 	<div class="header">
@@ -490,14 +490,15 @@
 
 	.bubble {
 		border: var(--border-hairline);
+		border-radius: var(--radius-lg);
 		padding: var(--space-sm) var(--space-md);
 		max-width: 34rem;
 	}
 
 	.bubble-user {
-		background: var(--color-frame-ink);
+		background: var(--color-primary);
+		border-color: var(--color-primary);
 		color: var(--color-on-primary);
-		font-family: var(--font-heading);
 	}
 
 	.bubble-assistant {
@@ -594,7 +595,8 @@
 
 	.wiki-tag {
 		border: var(--border-hairline);
-		padding: 0 3px;
+		border-radius: var(--radius-sm);
+		padding: 0 4px;
 		text-decoration: none;
 	}
 
@@ -608,7 +610,7 @@
 		display: flex;
 		justify-content: space-between;
 		padding: var(--space-sm) var(--space-lg);
-		background: var(--color-primary);
+		background: var(--color-danger);
 		color: var(--color-on-primary);
 	}
 

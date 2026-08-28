@@ -428,6 +428,7 @@
 		min-height: 0;
 		overflow-y: auto;
 		border: var(--border-hairline);
+		border-radius: var(--radius-lg);
 		background: var(--color-canvas);
 	}
 
@@ -447,7 +448,7 @@
 	}
 
 	.error-text {
-		color: var(--color-primary);
+		color: var(--color-danger);
 	}
 
 	.empty-text {
@@ -562,6 +563,7 @@
 	.prose :global(pre) {
 		overflow-x: auto;
 		border: var(--border-hairline);
+		border-radius: var(--radius-md);
 		padding: var(--space-sm);
 		background: var(--color-canvas);
 	}
@@ -602,7 +604,8 @@
 
 	.chip {
 		border: var(--border-hairline);
-		padding: 1px var(--space-xs);
+		border-radius: var(--radius-sm);
+		padding: 2px var(--space-xs);
 		cursor: pointer;
 		font: inherit;
 		color: var(--color-ink);

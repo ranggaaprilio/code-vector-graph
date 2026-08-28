@@ -49,11 +49,13 @@
 		font-family: var(--font-heading);
 		font-size: var(--type-button-size);
 		font-weight: var(--type-button-weight);
-		text-transform: uppercase;
 		text-decoration: none;
-		display: inline-block;
-		padding: var(--space-s) var(--space-lg);
-		border-radius: var(--radius-none);
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		gap: var(--space-xs);
+		padding: 10px 18px;
+		border-radius: var(--radius-md);
 		cursor: pointer;
 		transition:
 			background-color var(--motion-fast) var(--ease-snap),
@@ -68,16 +70,9 @@
 		opacity: 0.5;
 	}
 
-	/* Mechanical press — the button moves, nothing glows. */
+	/* A slight physical press — the button dips a hair, nothing glows. */
 	.ds-btn:not(:disabled):active {
-		translate: 1px 1px;
-	}
-
-	/* Hover inverts ink/canvas. No new colour enters the palette. */
-	.ds-btn-primary {
-		background: var(--color-frame-ink);
-		color: var(--color-on-primary);
-		border: var(--border-hairline);
+		translate: 0 1px;
 	}
 
 	/* Hovering the page you are already on must not look like leaving it. */
@@ -85,32 +80,42 @@
 		cursor: default;
 	}
 
+	.ds-btn-primary {
+		background: var(--color-primary);
+		color: var(--color-on-primary);
+		border: none;
+	}
+
 	.ds-btn-primary:not(:disabled):not(.is-current):hover {
-		background: var(--color-canvas);
-		color: var(--color-ink);
+		background: var(--color-primary-pressed);
 	}
 
 	.ds-btn-secondary {
 		background: var(--color-canvas);
 		color: var(--color-ink);
-		border: var(--border-hairline);
+		border: 1px solid var(--color-hairline-strong);
 	}
 
 	.ds-btn-secondary:not(:disabled):not(.is-current):hover {
-		background: var(--color-frame-ink);
+		background: var(--color-row-hover);
+	}
+
+	.ds-btn-secondary.is-current {
+		background: var(--color-ink-deep);
 		color: var(--color-canvas);
+		border-color: var(--color-ink-deep);
 	}
 
 	.ds-btn-text-link {
 		background: transparent;
 		border: none;
 		padding: 0;
+		border-radius: 0;
 		color: var(--color-link);
 		text-decoration: underline;
 		text-underline-offset: 2px;
 		font-family: var(--font-body);
 		font-size: var(--type-body-size);
-		text-transform: none;
 		font-weight: 400;
 		transition: text-decoration-thickness var(--motion-fast) var(--ease-snap);
 	}

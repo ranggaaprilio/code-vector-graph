@@ -12,9 +12,10 @@
 <style>
 	.badge {
 		display: inline-block;
-		padding: 1px var(--space-xs);
-		border: var(--border-hairline);
+		padding: 2px 8px;
+		border-radius: var(--radius-sm);
 		color: var(--color-ink);
 		white-space: nowrap;
+		font-weight: 600;
 	}
 </style>

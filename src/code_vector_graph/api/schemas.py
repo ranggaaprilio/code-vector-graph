@@ -128,3 +128,10 @@ class CypherRequest(BaseModel):
     cypher: str
     params: dict[str, Any] = Field(default_factory=dict)
     limit: int = 100
+
+
+class EdgesRequest(BaseModel):
+    """Body for POST /graph/edges: complete the relationships among visible nodes."""
+
+    ids: list[str] = Field(..., max_length=200, description="Node `id` properties currently on the canvas")
+    limit: int = Field(default=500, ge=1, le=2000)

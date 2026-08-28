@@ -1,1 +1,0 @@
-import{n as e}from"../chunks/hePW80VL.js";import{t}from"../chunks/DxhPVHKV.js";var n=e({load:()=>r});function r(){t(307,`/apps`)}export{n as universal};

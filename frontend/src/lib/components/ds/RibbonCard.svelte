@@ -11,7 +11,7 @@
 	}: {
 		title?: string;
 		tint?: Tint;
-		/** Adds hover/focus affordance. Set it whenever the card is clickable. */
+		/** Adds hover/focus lift. Set it whenever the card is clickable. */
 		interactive?: boolean;
 		children?: Snippet;
 		class?: string;
@@ -34,16 +34,21 @@
 <style>
 	.ribbon-card {
 		border: var(--border-hairline);
+		border-radius: var(--radius-lg);
 		background: var(--color-canvas);
+		overflow: hidden;
 		height: 100%;
 		display: flex;
 		flex-direction: column;
+		transition:
+			box-shadow var(--motion-base) var(--ease-snap),
+			transform var(--motion-base) var(--ease-snap);
 	}
 
 	.ribbon-title {
 		background: var(--color-canvas);
 		color: var(--color-ink);
-		padding: var(--space-s) var(--space-md);
+		padding: var(--space-sm) var(--space-lg);
 		border-bottom: var(--border-hairline);
 	}
 
@@ -55,21 +60,25 @@
 		transition: background-color var(--motion-base) var(--ease-snap);
 	}
 
-	/* The edge thickens via outline, not border, so nothing reflows on hover. */
 	.interactive {
-		transition: outline-color var(--motion-fast) var(--ease-snap);
-		outline: var(--border-hairline-strong);
-		outline-color: transparent;
-		outline-offset: -1px;
+		cursor: pointer;
 	}
 
 	.interactive:hover,
 	.interactive:focus-within {
-		outline-color: var(--color-frame-ink);
+		box-shadow: var(--shadow-card);
+		transform: translateY(-1px);
 	}
 
 	.interactive:hover .ribbon-body,
 	.interactive:focus-within .ribbon-body {
 		background: var(--card-tint-hover);
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.interactive:hover,
+		.interactive:focus-within {
+			transform: none;
+		}
 	}
 </style>

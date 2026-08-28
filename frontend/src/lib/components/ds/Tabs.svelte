@@ -41,7 +41,7 @@
 			<a
 				href={it.href}
 				title={it.title}
-				class="tab ds-ui-label"
+				class="tab"
 				class:active={it.value === active}
 				aria-current={it.value === active ? 'page' : undefined}
 				onkeydown={onKeydown}
@@ -56,7 +56,7 @@
 			<button
 				type="button"
 				title={it.title}
-				class="tab ds-ui-label"
+				class="tab"
 				class:active={it.value === active}
 				aria-pressed={it.value === active}
 				onclick={() => onSelect?.(it.value)}
@@ -72,15 +72,17 @@
 	.tabs {
 		display: flex;
 		flex-wrap: wrap;
-		gap: var(--space-s);
+		gap: var(--space-xs);
 	}
 
 	.tab {
-		background: var(--color-canvas);
-		color: var(--color-ink);
-		border: var(--border-hairline);
-		border-radius: var(--radius-none);
-		padding: var(--space-s) var(--space-md);
+		background: transparent;
+		color: var(--color-ink-muted);
+		font-size: var(--type-body-sm-size);
+		font-weight: 500;
+		border: 1px solid var(--color-hairline);
+		border-radius: var(--radius-full);
+		padding: var(--space-xs) var(--space-md);
 		text-decoration: none;
 		cursor: pointer;
 		max-width: 100%;
@@ -90,21 +92,19 @@
 		transition:
 			background-color var(--motion-fast) var(--ease-snap),
 			color var(--motion-fast) var(--ease-snap),
-			translate var(--motion-fast) var(--ease-snap);
+			border-color var(--motion-fast) var(--ease-snap);
 	}
 
 	.tab:hover:not(.active) {
 		background: var(--color-row-hover);
+		border-color: var(--color-hairline-strong);
 	}
 
-	.tab:active {
-		translate: 1px 1px;
-	}
-
-	/* Selected segment inverts, matching button-primary. */
+	/* Selected segment inverts to ink — Notion's pill-tab-active. */
 	.tab.active {
-		background: var(--color-frame-ink);
+		background: var(--color-ink-deep);
 		color: var(--color-canvas);
+		border-color: var(--color-ink-deep);
 		cursor: default;
 	}
 </style>

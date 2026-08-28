@@ -13,16 +13,26 @@
 	} = $props();
 </script>
 
-<div class="eyebrow" class:sticky style="--eyebrow-tint: var(--tint-{tint})">
-	<h1 class="ds-display">{title}</h1>
+<div class="eyebrow" class:sticky>
+	<span class="accent" style="background: var(--tint-{tint})" aria-hidden="true"></span>
+	<h1 class="ds-h1">{title}</h1>
 </div>
 
 <style>
 	.eyebrow {
-		background: var(--eyebrow-tint);
-		padding: var(--space-xxl) var(--space-lg);
-		color: var(--color-ink);
+		background: var(--color-canvas);
+		display: flex;
+		align-items: center;
+		gap: var(--space-md);
+		padding: var(--space-lg) var(--space-lg);
 		border-bottom: var(--border-hairline);
+	}
+
+	.accent {
+		width: 4px;
+		height: 28px;
+		border-radius: var(--radius-full);
+		flex-shrink: 0;
 	}
 
 	.sticky {

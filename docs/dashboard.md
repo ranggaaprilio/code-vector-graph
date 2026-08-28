@@ -50,7 +50,7 @@ run `cvg-backfill-repo` (see [ingestion](ingestion.md)).
 | Applications | Cards per application: repos, file/chunk counts, language mix |
 | Application page | Overview (architecture prose or fallback stats), Files (tree → file → symbols, chunks, wiki), Wiki (OKF pages) |
 | Vectors | Semantic search and raw payload browse, scoped, with code/wiki badges |
-| Graph | Cytoscape rendering of the Neo4j ontology; read-only Cypher |
+| Graph | Svelte Flow (@xyflow/svelte) rendering of the Neo4j ontology with ELK layered layout; read-only Cypher |
 | Chat | An LLM answers questions, calling `search_code_json` scoped to the active application |
 | System | Health of Qdrant, Neo4j and the MCP session; collection and graph stats |
 
@@ -81,6 +81,7 @@ All endpoints are under `/api`, and the OpenAPI docs are at `/docs`.
 | `GET /api/graph/stats` | Node-label and relationship-type counts (`?app=&repo=`) |
 | `GET /api/graph/nodes` | Nodes of one label (`?label=&app=&repo=`) |
 | `GET /api/graph/subgraph` | Neighbourhood of a node (`?node_id=&depth=1..3`) |
+| `POST /api/graph/edges` | Relationships among the given node ids (`{ids: [...]}`, max 200) — the graph view calls this after Load nodes / Visualize so relations between visible nodes are drawn without fetching new nodes |
 | `POST /api/graph/cypher` | Run a Cypher query — **read-only**; writes are rejected |
 | `POST /api/search` | Semantic search via the MCP `search_code_json` tool (`app`/`repo` scope, wiki results included) |
 | `GET /api/chat/config` | Active chat provider/model and whether it is configured |
@@ -127,7 +128,7 @@ rather than failing outright when the MCP server is unavailable.
 ## Architecture
 
 ```
-browser — SvelteKit SPA (frontend/), Cytoscape + highlight.js as npm deps
+browser — SvelteKit SPA (frontend/), @xyflow/svelte + elkjs + highlight.js as npm deps
    │  fetch /api/*
    ▼
 FastAPI (api/app.py) ── routers/{apps,health,qdrant,graph,search,chat}.py

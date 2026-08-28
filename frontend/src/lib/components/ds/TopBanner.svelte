@@ -8,20 +8,18 @@
 	}
 
 	function textOf(ok: boolean | null): string {
-		if (ok == null) return 'CHECKING…';
-		return ok ? 'ONLINE' : 'DOWN';
+		if (ok == null) return 'Checking…';
+		return ok ? 'Online' : 'Down';
 	}
 </script>
 
 <header class="top-banner">
-	<div class="brand ds-display">Code Vector Graph</div>
-	<!-- Design.md's phone-callout slot: the thing the page wants you to notice.
-	     Dell red is spent on DOWN only, never on the healthy state. -->
+	<div class="brand">Code Vector Graph</div>
 	<div class="statuses" role="status" aria-live="polite">
 		{#each statuses as s (s.label)}
 			<span class="status-item {stateOf(s.ok)}">
 				<span class="dot" aria-hidden="true"></span>
-				{s.label}: {textOf(s.ok)}
+				{s.label} · {textOf(s.ok)}
 			</span>
 		{/each}
 	</div>
@@ -29,18 +27,23 @@
 
 <style>
 	.top-banner {
-		background: var(--color-frame-ink);
-		color: var(--color-canvas);
+		background: var(--color-canvas);
+		color: var(--color-ink);
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		padding: var(--space-md) var(--space-lg);
+		height: 64px;
+		padding: 0 var(--space-lg);
+		border-bottom: var(--border-hairline);
 		flex-wrap: wrap;
 		gap: var(--space-md);
 	}
 
 	.brand {
+		font-family: var(--font-heading);
 		font-size: var(--type-brand-size);
+		font-weight: 600;
+		letter-spacing: -0.01em;
 	}
 
 	.statuses {
@@ -52,30 +55,30 @@
 	.status-item {
 		display: inline-flex;
 		align-items: center;
-		gap: var(--space-s);
-		font-family: var(--font-heading);
-		font-weight: 700;
-		font-size: var(--type-h2-size);
+		gap: var(--space-xs);
+		font-size: var(--type-caption-size);
+		font-weight: 500;
 		white-space: nowrap;
 	}
 
 	.dot {
 		width: 8px;
 		height: 8px;
+		border-radius: var(--radius-full);
 		background: currentColor;
 		flex: none;
 	}
 
 	.status-item.up {
-		color: var(--color-canvas);
+		color: var(--color-success);
 	}
 
 	.status-item.down {
-		color: var(--color-primary);
+		color: var(--color-danger);
 	}
 
 	.status-item.unknown {
-		color: var(--color-on-ink-muted);
+		color: var(--color-ink-muted);
 	}
 
 	.status-item.unknown .dot {

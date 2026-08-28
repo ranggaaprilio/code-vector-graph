@@ -1,40 +1,36 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
 	import { page as pageState } from '$app/state';
-	import cytoscape from 'cytoscape';
+	import { SvelteFlowProvider } from '@xyflow/svelte';
 	import { SectionEyebrow, Button, Select, TextArea, DataTable } from '$lib/components/ds';
 	import { appStore } from '$lib/stores/app.svelte';
-	import { getNodes, getSubgraph, runCypher as apiRunCypher } from '$lib/api/client';
+	import { getEdgesAmong, getNodes, getSubgraph, runCypher as apiRunCypher } from '$lib/api/client';
 	import { renderMarkdown, copyToClipboard } from '$lib/utils/format';
-	import { NODE_LABELS, NODE_SHAPES, nodeHex, nodeShape, INK_HEX } from '$lib/utils/tints';
-
-	type CyCore = cytoscape.Core;
-
-	type GraphNode = {
-		id: string;
-		label: string;
-		caption: string;
-		properties: Record<string, unknown>;
-		color: string;
-		shape: string;
-	};
-	type GraphEdge = {
-		id?: string;
-		from?: string;
-		to?: string;
-		source?: string;
-		target?: string;
-		type?: string;
-	};
+	import { NODE_LABELS, nodeShape, nodeTintVar } from '$lib/utils/tints';
+	import GraphCanvas from '$lib/graph/GraphCanvas.svelte';
+	import { mergeGraph, nodesFromLabelResponse, elementsFromCypherRows } from '$lib/graph/toFlow';
+	import { assignLabelLanes, layoutWithElk } from '$lib/graph/layout';
+	import type {
+		ApiEdge,
+		ApiNode,
+		FlowEdge,
+		FlowNode,
+		GraphNodeData,
+		LayoutDirection
+	} from '$lib/graph/types';
 
 	type CypherResults = { columns: string[]; rows: Record<string, unknown>[]; truncated: boolean };
 
-	let canvasEl: HTMLDivElement | undefined = $state();
-	let cy: CyCore | null = null;
+	// Graph elements. $state.raw: Svelte Flow replaces the arrays wholesale on
+	// drag/select, and deep reactivity over hundreds of nodes buys nothing.
+	let canvas: GraphCanvas | undefined = $state();
+	let nodes = $state.raw<FlowNode[]>([]);
+	let edges = $state.raw<FlowEdge[]>([]);
 
 	// Controls
 	let selectedLabel = $state(NODE_LABELS.includes('Function') ? 'Function' : NODE_LABELS[0]);
 	let depthStr = $state('1');
+	let direction = $state<LayoutDirection>('DOWN');
 
 	// Status
 	let loading = $state(false);
@@ -42,7 +38,7 @@
 	let statusMsg = $state('');
 
 	// Inspector
-	let selectedNode = $state<GraphNode | null>(null);
+	let selectedNode = $state<GraphNodeData | null>(null);
 
 	// Cypher box
 	let cypherQuery = $state('MATCH (n:Function) RETURN n LIMIT 25');
@@ -76,80 +72,11 @@
 	);
 
 	onMount(() => {
-		if (!canvasEl) return;
-		cy = cytoscape({
-			container: canvasEl,
-			style: [
-				{
-					// Nodes are catalog tints inside a hairline, like every other
-					// surface in this design system. Shape carries the label so the
-					// legend never relies on colour alone.
-					selector: 'node',
-					style: {
-						'background-color': 'data(color)',
-						'border-width': 1,
-						'border-color': INK_HEX,
-						label: 'data(caption)',
-						color: INK_HEX,
-						'font-family': 'Helvetica, Arial, sans-serif',
-						'font-size': 10,
-						'text-valign': 'center',
-						'text-halign': 'center',
-						width: 44,
-						height: 44,
-						'text-wrap': 'wrap',
-						'text-max-width': '60px'
-					}
-				},
-				// One rule per shape: cytoscape's types don't model a data() mapper
-				// for `shape`, and this stays type-safe.
-				...NODE_SHAPES.map((sh) => ({
-					selector: `node[shape="${sh}"]`,
-					style: { shape: sh }
-				})),
-				{
-					selector: 'edge',
-					style: {
-						width: 1,
-						'line-color': INK_HEX,
-						'target-arrow-color': INK_HEX,
-						'target-arrow-shape': 'triangle',
-						'curve-style': 'bezier',
-						label: 'data(type)',
-						'font-family': 'Helvetica, Arial, sans-serif',
-						'font-size': 8,
-						color: INK_HEX,
-						'text-rotation': 'autorotate'
-					}
-				},
-				{
-					// Selection thickens the edge — the same motif the cards use.
-					selector: 'node:selected',
-					style: { 'border-width': 4, 'border-color': INK_HEX }
-				}
-			],
-			layout: { name: 'cose' },
-			wheelSensitivity: 0.3
-		});
-
-		cy.on('tap', 'node', (evt) => {
-			selectedNode = evt.target.data() as GraphNode;
-		});
-
-		cy.on('dbltap', 'node', async (evt) => {
-			await expandNode(evt.target.data('id'));
-		});
-
 		// Hand-off from the file explorer arrives as ?node=<graph node id>.
 		const handOffNode = pageState.url.searchParams.get('node');
 		if (handOffNode) {
 			void expandNode(handOffNode);
 		}
-
-		return () => {
-			cy?.destroy();
-			cy = null;
-		};
 	});
 
 	// Scope changes used to refetch the visible view (js/lib/lazy.js). Only
@@ -161,41 +88,51 @@
 		if (v === seenScope) return;
 		seenScope = v;
 		untrack(() => {
-			if (!cy || cy.nodes().length === 0) return;
+			if (nodes.length === 0) return;
 			clearGraph();
 			void loadLabel();
 		});
 	});
 
 	/**
-	 * Merge nodes/edges into the canvas. Edges are only added once both endpoints
-	 * exist (counting nodes added in this same batch) and are mapped to
-	 * Cytoscape's source/target.
+	 * Merge incoming elements into the graph, run the ELK layout over the whole
+	 * thing and fit the view. Optionally marks one node as selected so a hand-off
+	 * or expansion lands on the node the user actually asked for.
 	 */
-	function addToCy(nodes: GraphNode[], edges: GraphEdge[]) {
-		if (!cy) return;
-		const ids = new Set(cy.nodes().map((n) => n.id()));
-		const edgeIds = new Set(cy.edges().map((e) => e.id()));
+	async function applyGraph(incomingNodes: ApiNode[], incomingEdges: ApiEdge[], selectId?: string) {
+		const merged = mergeGraph({ nodes, edges }, incomingNodes, incomingEdges);
+		const laid = await layoutWithElk(merged.nodes, merged.edges, direction);
+		nodes = selectId ? laid.map((n) => ({ ...n, selected: n.id === selectId })) : laid;
+		edges = assignLabelLanes(laid, merged.edges);
+		await canvas?.fit();
+		return merged;
+	}
 
-		const newElements: cytoscape.ElementDefinition[] = [];
-		for (const n of nodes || []) {
-			if (!n?.id || ids.has(n.id)) continue;
-			ids.add(n.id);
-			newElements.push({ group: 'nodes', data: n });
+	/**
+	 * Relationships among everything that will be on the canvas — the nodes
+	 * already there plus `incoming`. Neo4j Browser does this implicitly after
+	 * `MATCH (n) RETURN n`; our /nodes and /cypher payloads carry no edges, so
+	 * we ask for them explicitly. The endpoint caps ids at 200; beyond that the
+	 * newest nodes win, since they are what the user just asked for.
+	 */
+	async function edgesAmongVisible(incoming: ApiNode[]): Promise<ApiEdge[]> {
+		const ids = [...new Set([...incoming.map((n) => n.id), ...nodes.map((n) => n.id)])].slice(0, 200);
+		if (ids.length < 2) return [];
+		return (await getEdgesAmong(ids)).edges;
+	}
+
+	/** Re-run the layout in the current direction without fetching anything. */
+	async function relayout() {
+		if (nodes.length === 0) return;
+		loading = true;
+		try {
+			nodes = await layoutWithElk(nodes, edges, direction);
+			edges = assignLabelLanes(nodes, edges);
+			await canvas?.fit();
+		} catch (e) {
+			error = String((e as Error)?.message || e);
 		}
-		for (const e of edges || []) {
-			if (!e) continue;
-			const source = e.from ?? e.source ?? '';
-			const target = e.to ?? e.target ?? '';
-			const id = e.id || `${source}->${e.type || 'REL'}->${target}`;
-			if (edgeIds.has(id) || !ids.has(source) || !ids.has(target)) continue;
-			edgeIds.add(id);
-			newElements.push({ group: 'edges', data: { id, source, target, type: e.type } });
-		}
-		if (newElements.length) {
-			cy.add(newElements);
-			cy.layout({ name: 'cose', animate: true, randomize: false }).run();
-		}
+		loading = false;
 	}
 
 	async function loadLabel() {
@@ -207,16 +144,9 @@
 			const data = (await getNodes(selectedLabel, 80, 0, appStore.scopeParams())) as {
 				nodes: { id: string; properties: Record<string, unknown> }[];
 			};
-			const nodes: GraphNode[] = data.nodes.map((n) => ({
-				id: n.id,
-				label: selectedLabel,
-				caption: String(n.properties.name || n.properties.path || n.id.slice(0, 12)),
-				properties: n.properties,
-				color: nodeHex(selectedLabel),
-				shape: nodeShape(selectedLabel)
-			}));
-			addToCy(nodes, []);
-			statusMsg = `Loaded ${data.nodes.length} ${selectedLabel} nodes`;
+			const incoming = nodesFromLabelResponse(selectedLabel, data.nodes);
+			const merged = await applyGraph(incoming, await edgesAmongVisible(incoming));
+			statusMsg = `Loaded ${data.nodes.length} ${selectedLabel} nodes · ${merged.addedEdges} relations`;
 		} catch (e) {
 			error = String((e as Error)?.message || e);
 		}
@@ -225,25 +155,18 @@
 
 	async function expandNode(nodeId: string) {
 		loading = true;
+		error = null;
 		statusMsg = 'Expanding…';
 		try {
 			const data = (await getSubgraph(nodeId, Number(depthStr), 80)) as {
-				nodes: GraphNode[];
-				edges: GraphEdge[];
+				nodes: ApiNode[];
+				edges: ApiEdge[];
 			};
-			const nodes = data.nodes.map((n) => ({
-				...n,
-				color: nodeHex(n.label),
-				shape: nodeShape(n.label)
-			}));
-			addToCy(nodes, data.edges);
+			await applyGraph(data.nodes, data.edges, nodeId);
 			// Reflect the expansion in the inspector so a hand-off lands on the
 			// node the user actually asked for, not on an empty panel.
 			const hit = nodes.find((n) => n.id === nodeId);
-			if (hit) {
-				selectedNode = hit;
-				cy?.$id(nodeId).select();
-			}
+			if (hit) selectedNode = hit.data;
 			statusMsg = `Expanded: +${data.nodes.length} nodes, +${data.edges.length} edges`;
 		} catch (e) {
 			error = String((e as Error)?.message || e);
@@ -252,13 +175,14 @@
 	}
 
 	function clearGraph() {
-		cy?.elements().remove();
+		nodes = [];
+		edges = [];
 		selectedNode = null;
 		statusMsg = 'Canvas cleared';
 	}
 
 	function fitGraph() {
-		cy?.fit();
+		void canvas?.fit();
 	}
 
 	async function handleRunCypher() {
@@ -273,38 +197,19 @@
 		cypherLoading = false;
 	}
 
-	function visualizeCypherResults() {
+	async function visualizeCypherResults() {
 		if (!cypherResults) return;
-		const nodes: GraphNode[] = [];
-		const edges: GraphEdge[] = [];
-		for (const row of cypherResults.rows) {
-			for (const val of Object.values(row)) {
-				if (val && typeof val === 'object') {
-					const obj = val as Record<string, unknown>;
-					if (obj._type === 'node') {
-						const labels = obj._labels as string[] | undefined;
-						const label = labels?.[0] || 'Node';
-						const id = String(obj.id || obj._element_id || '');
-						nodes.push({
-							id,
-							label,
-							caption: String(obj.name || obj.path || id.slice(0, 12)),
-							properties: obj,
-							color: nodeHex(label),
-							shape: nodeShape(label)
-						});
-					} else if (obj._type === 'relationship') {
-						edges.push({
-							id: String(obj._element_id || ''),
-							from: String(obj.start_node_id || ''),
-							to: String(obj.end_node_id || ''),
-							type: obj._rel_type as string | undefined
-						});
-					}
-				}
-			}
+		const { nodes: n, edges: e } = elementsFromCypherRows(cypherResults.rows);
+		loading = true;
+		error = null;
+		try {
+			// Rows carry the relationships the query returned; complete the rest.
+			const merged = await applyGraph(n, [...e, ...(await edgesAmongVisible(n))]);
+			statusMsg = `Visualized: +${merged.addedNodes} nodes, +${merged.addedEdges} edges`;
+		} catch (err) {
+			error = String((err as Error)?.message || err);
 		}
-		addToCy(nodes, edges);
+		loading = false;
 	}
 
 	async function copyNodeId() {
@@ -341,7 +246,7 @@
 	}
 </script>
 
-<SectionEyebrow title="GRAPH EXPLORER" tint="periwinkle" />
+<SectionEyebrow title="Graph Explorer" tint="periwinkle" />
 
 <div class="graph-page">
 	<div class="controls">
@@ -356,6 +261,11 @@
 			<option value="1">Depth 1</option>
 			<option value="2">Depth 2</option>
 			<option value="3">Depth 3</option>
+		</Select>
+
+		<Select bind:value={direction} onchange={relayout} aria-label="Layout direction">
+			<option value="DOWN">Top-down</option>
+			<option value="RIGHT">Left-right</option>
 		</Select>
 
 		<span class="ds-caption scope-readout">Scope: {appStore.scopeLabelText}</span>
@@ -376,7 +286,7 @@
 	<div class="legend">
 		{#each NODE_LABELS as l (l)}
 			<span class="legend-item ds-caption">
-				<span class="ds-swatch" data-shape={nodeShape(l)} style="background:{nodeHex(l)}"></span>
+				<span class="ds-swatch" data-shape={nodeShape(l)} style="background:{nodeTintVar(l)}"></span>
 				{l}
 			</span>
 		{/each}
@@ -384,11 +294,23 @@
 
 	<div class="workspace">
 		<div class="canvas-panel">
-			<div class="canvas" bind:this={canvasEl}></div>
+			<div class="canvas">
+				<SvelteFlowProvider>
+					<GraphCanvas
+						bind:this={canvas}
+						bind:nodes
+						bind:edges
+						onnodeclick={(d) => (selectedNode = d)}
+						onexpand={(id) => void expandNode(id)}
+					/>
+				</SvelteFlowProvider>
+			</div>
 			{#if loading}
 				<div class="canvas-loading ds-caption">Loading…</div>
 			{/if}
-			<div class="canvas-hint ds-caption">Double-click a node to expand</div>
+			<div class="canvas-hint ds-caption">
+				Double-click a node to expand · drag to pan · scroll to zoom
+			</div>
 		</div>
 
 		<div class="side-panel">
@@ -401,12 +323,25 @@
 						<span
 							class="ds-swatch"
 							data-shape={nodeShape(selectedNode.label)}
-							style="background:{nodeHex(selectedNode.label)}"
+							style="background:{nodeTintVar(selectedNode.label)}"
 						></span>
 						<span class="ds-ui-label">{selectedNode.label}</span>
 						<Button variant="text-link" class="copy-btn" onclick={copyNodeId}>copy id</Button>
 					</div>
 					<div class="ds-body-sm caption">{selectedNode.caption}</div>
+
+					<div class="inspector-actions">
+						<Button
+							variant="secondary"
+							disabled={loading}
+							onclick={() => selectedNode && void expandNode(selectedNode.id)}
+						>
+							Expand
+						</Button>
+						{#if selectedNode.label === 'File'}
+							<Button variant="secondary" onclick={openSelectedInExplorer}>Open in Explorer</Button>
+						{/if}
+					</div>
 
 					{#if selectedNode.label === 'WikiPage'}
 						<div class="wiki-preview">
@@ -415,8 +350,6 @@
 							)}
 							<Button variant="secondary" onclick={openSelectedWikiPage}>Open wiki page</Button>
 						</div>
-					{:else if selectedNode.label === 'File'}
-						<Button variant="secondary" onclick={openSelectedInExplorer}>Open in Explorer</Button>
 					{/if}
 
 					<div class="props">
@@ -490,7 +423,7 @@
 	}
 
 	.error-msg {
-		color: var(--color-primary);
+		color: var(--color-danger);
 	}
 
 	.legend {
@@ -573,6 +506,13 @@
 
 	.inspector-header :global(.copy-btn) {
 		margin-left: auto;
+	}
+
+	.inspector-actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--space-sm);
+		margin-top: var(--space-sm);
 	}
 
 	.caption {

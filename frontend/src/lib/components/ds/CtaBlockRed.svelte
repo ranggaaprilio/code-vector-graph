@@ -11,12 +11,13 @@
 	.cta {
 		background: var(--color-primary);
 		color: var(--color-on-primary);
-		border: var(--border-hairline);
+		border-radius: var(--radius-lg);
 		padding: var(--space-lg);
 		font-size: var(--type-body-size);
 	}
 
 	.cta :global(a) {
 		color: var(--color-on-primary);
+		font-weight: 600;
 	}
 </style>

@@ -85,6 +85,12 @@ export const getSubgraph = (nodeId: string, depth = 1, limit = 100) =>
 	req(`/graph/subgraph${qs({ node_id: nodeId, depth, limit })}`);
 export const runCypher = (cypher: string, params: Record<string, unknown> = {}, limit = 100) =>
 	req('/graph/cypher', { method: 'POST', body: JSON.stringify({ cypher, params, limit }) });
+/** Relationships whose both endpoints are among `ids` (max 200). */
+export const getEdgesAmong = (ids: string[], limit = 500) =>
+	req<{ edges: { id: string; from: string; to: string; type: string }[] }>('/graph/edges', {
+		method: 'POST',
+		body: JSON.stringify({ ids, limit })
+	});
 
 // Semantic search — body may include app, repo, include_wiki, source, top_k
 export const searchCode = (body: Record<string, unknown>) =>

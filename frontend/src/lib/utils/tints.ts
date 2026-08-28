@@ -17,22 +17,24 @@ export const RIBBON_TINTS = [
 export type Tint = (typeof RIBBON_TINTS)[number];
 
 /** Mirrors --tint-* in styles/tokens.css. Only used when the live CSS custom
- *  property cannot be read (canvas rendering before stylesheets settle). */
+ *  property cannot be read (SVG/MiniMap rendering before stylesheets settle). */
 const TINT_HEX: Record<Tint, string> = {
-	olive: '#8e8a25',
-	sage: '#b3bd95',
-	salmon: '#d77a7a',
-	peach: '#e6915d',
-	lime: '#c0d4a7',
-	sky: '#9ab6c8',
-	steel: '#a5b8c0',
-	periwinkle: '#8c9ae0'
+	olive: '#fef7d6',
+	sage: '#f8f5e8',
+	salmon: '#fde0ec',
+	peach: '#ffe8d4',
+	lime: '#d9f3e1',
+	sky: '#dcecfa',
+	steel: '#f0eeec',
+	periwinkle: '#e6e0f5'
 };
 
-/** Canvas-rendered surfaces (Cytoscape) cannot use var(), and derived tokens
- *  built with color-mix() do not resolve through getComputedStyle. So the two
- *  literal anchors of the palette are exported for canvas use. */
-export const INK_HEX = '#000000';
+/** A few Svelte Flow surfaces take a literal colour through props rather than
+ *  CSS (SVG edge markers, the MiniMap's node fill), and derived tokens built
+ *  with color-mix() do not resolve through getComputedStyle. So the two
+ *  literal anchors of the palette are exported for those call sites. Mirrors
+ *  --color-ink / --color-canvas in styles/tokens.css. */
+export const INK_HEX = '#1a1a1a';
 export const CANVAS_HEX = '#ffffff';
 
 export function tintForIndex(i: number): Tint {
@@ -121,10 +123,17 @@ export function nodeStyle(label: string): NodeStyle {
 	return NODE_STYLES[label] ?? UNKNOWN_NODE;
 }
 
-/** Fill colour for a graph node. Cytoscape draws on canvas, so it needs a
- *  resolved value rather than a var() reference. */
+/** Resolved fill colour for a graph node — for the places that cannot take a
+ *  var() reference (SVG markers, MiniMap nodeColor). DOM nodes should use
+ *  nodeTintVar() so the stylesheet stays the single source of truth. */
 export function nodeHex(label: string): string {
 	return tintHex(nodeStyle(label).tint);
+}
+
+/** CSS var() reference for a graph node's tint, for DOM-rendered surfaces
+ *  (Svelte Flow nodes, legend swatches, inspector). */
+export function nodeTintVar(label: string): string {
+	return `var(--tint-${nodeStyle(label).tint})`;
 }
 
 export function nodeShape(label: string): NodeShape {

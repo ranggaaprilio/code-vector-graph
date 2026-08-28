@@ -6,7 +6,7 @@ import re
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from code_vector_graph.api.deps import get_graph, get_registry
-from code_vector_graph.api.schemas import CypherRequest
+from code_vector_graph.api.schemas import CypherRequest, EdgesRequest
 from code_vector_graph.api.serialize import serialize_value
 from code_vector_graph.api.services.apps import ApplicationRegistry, AppScope
 from code_vector_graph.stores.graph_schema import NODE_LABELS, RELATIONSHIP_TYPES
@@ -51,6 +51,25 @@ def _is_write_query(cypher: str) -> bool:
 
 # Kept under the old name for existing imports; implementation lives in api/serialize.py.
 _serialize_value = serialize_value
+
+
+def _node_ref(node) -> str:
+    """The id the dashboard keys nodes by: the `id` property, else Neo4j's element id."""
+    if node is None:
+        return ""
+    props = dict(node)
+    return str(props.get("id") or getattr(node, "element_id", "") or "")
+
+
+def _serialize_rel(rel) -> dict:
+    """Relationship -> {id, from, to, type} in the shape the graph view consumes."""
+    eid = getattr(rel, "element_id", None) or str(id(rel))
+    return {
+        "id": str(eid),
+        "from": _node_ref(getattr(rel, "start_node", None)),
+        "to": _node_ref(getattr(rel, "end_node", None)),
+        "type": rel.type if hasattr(rel, "type") else str(type(rel).__name__),
+    }
 
 
 def _scope_or_404(registry: ApplicationRegistry, app: str | None, repo: str | None) -> AppScope | None:
@@ -220,20 +239,46 @@ def subgraph(
                 seen_nodes[nid] = {"id": nid, "label": label, "caption": caption, "properties": props}
 
         for rel in (raw_rels or []):
-            eid = getattr(rel, "element_id", None) or str(id(rel))
-            if eid not in seen_edges:
-                start = getattr(rel, "start_node", None)
-                end = getattr(rel, "end_node", None)
-                start_props = {k: v for k, v in dict(start).items()} if start else {}
-                end_props = {k: v for k, v in dict(end).items()} if end else {}
-                seen_edges[eid] = {
-                    "id": str(eid),
-                    "from": start_props.get("id", str(getattr(start, "element_id", ""))),
-                    "to": end_props.get("id", str(getattr(end, "element_id", ""))),
-                    "type": rel.type if hasattr(rel, "type") else str(type(rel).__name__),
-                }
+            edge = _serialize_rel(rel)
+            seen_edges.setdefault(edge["id"], edge)
 
     return {"nodes": list(seen_nodes.values()), "edges": list(seen_edges.values())}
+
+
+@router.post("/edges")
+def edges_among(req: EdgesRequest, graph: GraphStore = Depends(get_graph)):
+    """Relationships whose BOTH endpoints are in `ids`.
+
+    Lets the graph view auto-complete relations between the nodes already on
+    the canvas (what Neo4j Browser does after `MATCH (n) RETURN n`), without
+    pulling in any new nodes.
+    """
+    ids = sorted({i for i in req.ids if i})
+    if not ids:
+        return {"edges": []}
+    try:
+        # The endpoint ids are returned explicitly: a relationship's start/end
+        # nodes only carry their properties when those nodes are part of the
+        # result, otherwise the driver hands back bare element ids.
+        result = graph.query_graph(
+            "MATCH (a)-[r]->(b) WHERE a.id IN $ids AND b.id IN $ids "
+            "RETURN r, a.id AS from_id, b.id AS to_id LIMIT $limit",
+            {"ids": ids, "limit": req.limit},
+        )
+        records = result.records if hasattr(result, "records") else list(result)
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+
+    seen: dict = {}
+    for rec in records:
+        rel = rec.get("r") if hasattr(rec, "get") else None
+        if rel is None:
+            continue
+        edge = _serialize_rel(rel)
+        edge["from"] = str(rec.get("from_id") or edge["from"])
+        edge["to"] = str(rec.get("to_id") or edge["to"])
+        seen.setdefault(edge["id"], edge)
+    return {"edges": list(seen.values())}
 
 
 @router.post("/cypher")
@@ -277,6 +322,10 @@ def run_cypher(req: CypherRequest, graph: GraphStore = Depends(get_graph)):
                     "_type": "relationship",
                     "_rel_type": val.type,
                     "_element_id": str(val.element_id),
+                    # Endpoints keyed the same way node cells are (id prop, else
+                    # element id) so the dashboard can draw the edge.
+                    "start_node_id": _node_ref(val.start_node),
+                    "end_node_id": _node_ref(val.end_node),
                     **{k: _serialize_value(v) for k, v in dict(val).items()},
                 }
             else:

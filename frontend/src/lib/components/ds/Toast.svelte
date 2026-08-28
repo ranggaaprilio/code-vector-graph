@@ -33,14 +33,14 @@
 	.toast {
 		background: var(--color-canvas);
 		border: var(--border-hairline);
-		box-shadow: var(--bevel-hard);
-		padding: var(--space-s) var(--space-lg);
+		border-radius: var(--radius-md);
+		box-shadow: var(--shadow-modal);
+		padding: var(--space-sm) var(--space-lg);
 		cursor: pointer;
 		font-family: var(--font-body);
 		color: var(--color-ink);
 		transition:
 			background-color var(--motion-fast) var(--ease-snap),
-			translate var(--motion-fast) var(--ease-snap),
 			box-shadow var(--motion-fast) var(--ease-snap);
 	}
 
@@ -49,7 +49,6 @@
 	}
 
 	.toast:active {
-		translate: 2px 2px;
-		box-shadow: none;
+		box-shadow: var(--shadow-card);
 	}
 </style>

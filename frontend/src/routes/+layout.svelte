@@ -25,8 +25,8 @@
 	}
 
 	const statuses = $derived([
-		{ label: 'QDRANT', ok: appStore.statusOf(appStore.health.qdrant?.ok) },
-		{ label: 'NEO4J', ok: appStore.statusOf(appStore.health.neo4j?.ok) },
+		{ label: 'Qdrant', ok: appStore.statusOf(appStore.health.qdrant?.ok) },
+		{ label: 'Neo4j', ok: appStore.statusOf(appStore.health.neo4j?.ok) },
 		{ label: 'MCP', ok: appStore.statusOf(appStore.health.mcp_session?.ok) }
 	]);
 
@@ -150,7 +150,7 @@
 	}
 
 	.error {
-		color: var(--color-primary);
+		color: var(--color-danger);
 	}
 
 	.nav {
