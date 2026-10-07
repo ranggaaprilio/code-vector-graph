@@ -32,10 +32,17 @@ if [[ ! -d "${REPO_PATH}" ]]; then
   exit 2
 fi
 
-PYTHON_BIN="${PYTHON_BIN:-${PROJECT_ROOT}/.venv/bin/python}"
-if [[ ! -x "${PYTHON_BIN}" ]]; then
-  PYTHON_BIN="python"
-fi
+# Console scripts installed by `pip install -e .`. Prefer the project venv,
+# fall back to whatever is on PATH.
+VENV_BIN="${VENV_BIN:-${PROJECT_ROOT}/.venv/bin}"
+cvg() {
+  local name="$1"; shift
+  if [[ -x "${VENV_BIN}/${name}" ]]; then
+    "${VENV_BIN}/${name}" "$@"
+  else
+    "${name}" "$@"
+  fi
+}
 
 MODEL="${MODEL:-jina}"
 DTYPE="${DTYPE:-auto}"
@@ -53,7 +60,6 @@ OKF_OUT_DIR="${OKF_OUT_DIR:-okf-wiki}" # OKF bundle directory (build output / sy
 export PYTORCH_ENABLE_MPS_FALLBACK="${PYTORCH_ENABLE_MPS_FALLBACK:-1}"
 
 ARGS=(
-  "${PROJECT_ROOT}/main.py"
   --repo-path "${REPO_PATH}"
   --qdrant-url "${QDRANT_URL}"
   --collection-name "${COLLECTION_NAME}"
@@ -83,9 +89,9 @@ echo
 
 cd "${PROJECT_ROOT}"
 
-# Index code first. `set -e` aborts here if main.py fails, so the OKF steps below
-# only run after a successful code index. (No `exec`: the shell must live on.)
-"${PYTHON_BIN}" "${ARGS[@]}"
+# Index code first. `set -e` aborts here if cvg-ingest fails, so the OKF steps
+# below only run after a successful code index. (No `exec`: the shell must live on.)
+cvg cvg-ingest "${ARGS[@]}"
 
 # ---- OKF LLM wiki: enrich the repo and connect it to the SAME Qdrant collection
 # ---- and the SAME Neo4j graph as the code just indexed above.
@@ -98,7 +104,6 @@ if [[ "${ENABLE_OKF}" == "1" ]]; then
   # Wiki -> Neo4j only when the code graph was built; otherwise the WikiPage
   # DOCUMENTS edges would point at code nodes that were never created.
   OKF_SYNC_ARGS=(
-    "${PROJECT_ROOT}/scripts/sync_okf_wiki.py"
     --bundle "${OKF_OUT_DIR}"
     --model "${MODEL}"
     --collection-name "${COLLECTION_NAME}"
@@ -112,9 +117,9 @@ if [[ "${ENABLE_OKF}" == "1" ]]; then
   # Phase 1 build (DeepSeek enrichment; reads DEEPSEEK_API_KEY from .env), then
   # Phase 2 sync. Guarded by `if` so a failure warns but does NOT undo the
   # already-successful code index (errexit is suspended inside an `if` condition).
-  if "${PYTHON_BIN}" "${PROJECT_ROOT}/scripts/build_okf_wiki.py" \
+  if cvg cvg-okf-build \
         --repo-path "${REPO_PATH}" --out-dir "${OKF_OUT_DIR}" --verbose \
-     && "${PYTHON_BIN}" "${OKF_SYNC_ARGS[@]}"; then
+     && cvg cvg-okf-sync "${OKF_SYNC_ARGS[@]}"; then
     echo "OKF wiki generated and synced (Qdrant collection '${COLLECTION_NAME}_...' + Neo4j)."
   else
     echo "WARNING: OKF wiki step failed; code index is unaffected." >&2

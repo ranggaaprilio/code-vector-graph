@@ -8,9 +8,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.chunker import chunk_text
-from src.cli import parse_args, setup_logging
-from src.config import (
+from code_vector_graph.parsing.chunker import chunk_text
+from code_vector_graph.cli.ingest import parse_args
+from code_vector_graph.logging_setup import setup_logging
+from code_vector_graph.config import (
     DEFAULT_CHUNK_OVERLAP,
     DEFAULT_CHUNK_SIZE,
     DEFAULT_COLLECTION_NAME,
@@ -18,10 +19,11 @@ from src.config import (
     MODEL_CONFIGS,
     DEFAULT_MODEL_ID,
 )
-from main import check_qdrant_health, main, run_pipeline
-from src.parser import parse_file
-from src.scanner import discover_files
-from src.store import VectorStore
+from code_vector_graph.cli.ingest import main
+from code_vector_graph.ingestion.pipeline import check_qdrant_health, run_pipeline
+from code_vector_graph.parsing.parser import parse_file
+from code_vector_graph.parsing.scanner import discover_files
+from code_vector_graph.stores.vector_store import VectorStore
 
 TEST_DIMENSIONS = MODEL_CONFIGS[DEFAULT_MODEL_ID]["dimensions"]
 
@@ -177,8 +179,8 @@ class TestPipelineDryRun:
         mock_args.dry_run = True
         mock_args.verbose = True
 
-        with patch("main.create_embedder") as mock_create, \
-             patch("main.VectorStore") as mock_store_class:
+        with patch("code_vector_graph.ingestion.pipeline.create_embedder") as mock_create, \
+             patch("code_vector_graph.ingestion.pipeline.VectorStore") as mock_store_class:
 
             mock_embedder = MagicMock()
             mock_create.return_value = mock_embedder
@@ -205,8 +207,8 @@ class TestPipelineDryRun:
         """Test that dry-run mode prints statistics."""
         mock_args.dry_run = True
 
-        with patch("main.create_embedder"), \
-             patch("main.VectorStore"):
+        with patch("code_vector_graph.ingestion.pipeline.create_embedder"), \
+             patch("code_vector_graph.ingestion.pipeline.VectorStore"):
             run_pipeline(mock_args)
 
         captured = capsys.readouterr()
@@ -219,8 +221,8 @@ class TestPipelineDryRun:
 class TestPipelineFullRun:
     """Test full pipeline execution."""
 
-    @patch("main.create_embedder")
-    @patch("main.VectorStore")
+    @patch("code_vector_graph.ingestion.pipeline.create_embedder")
+    @patch("code_vector_graph.ingestion.pipeline.VectorStore")
     def test_full_pipeline_with_mocked_services(self, mock_store_class, mock_create, test_repo, mock_args):
         mock_embedder = MagicMock()
         mock_embedder.check_health.return_value = True
@@ -322,8 +324,8 @@ class TestVerboseOutput:
         mock_args.verbose = True
         mock_args.dry_run = True
 
-        with patch("main.create_embedder"), \
-             patch("main.VectorStore"):
+        with patch("code_vector_graph.ingestion.pipeline.create_embedder"), \
+             patch("code_vector_graph.ingestion.pipeline.VectorStore"):
 
             with caplog.at_level("INFO"):
                 run_pipeline(mock_args)
@@ -337,8 +339,8 @@ class TestVerboseOutput:
         mock_args.verbose = False
         mock_args.dry_run = True
 
-        with patch("main.create_embedder"), \
-             patch("main.VectorStore"):
+        with patch("code_vector_graph.ingestion.pipeline.create_embedder"), \
+             patch("code_vector_graph.ingestion.pipeline.VectorStore"):
 
             run_pipeline(mock_args)
 
@@ -364,8 +366,8 @@ class TestErrorHandling:
         mock_args.repo_path = str(tmp_path)
         mock_args.dry_run = True
 
-        with patch("main.create_embedder"), \
-             patch("main.VectorStore"):
+        with patch("code_vector_graph.ingestion.pipeline.create_embedder"), \
+             patch("code_vector_graph.ingestion.pipeline.VectorStore"):
 
             stats = run_pipeline(mock_args)
 
@@ -378,9 +380,9 @@ class TestErrorHandling:
         mock_args.repo_path = test_repo
         mock_args.dry_run = True
 
-        with patch("main.create_embedder"), \
-             patch("main.VectorStore"), \
-             patch("main.parse_file") as mock_parse:
+        with patch("code_vector_graph.ingestion.pipeline.create_embedder"), \
+             patch("code_vector_graph.ingestion.pipeline.VectorStore"), \
+             patch("code_vector_graph.ingestion.pipeline.parse_file") as mock_parse:
 
             # Make first call fail, second succeed
             mock_parse.side_effect = [
@@ -462,14 +464,14 @@ class TestMainEntryPoint:
     def test_main_keyboard_interrupt(self, test_repo):
         """Test main handles keyboard interrupt."""
         with patch("sys.argv", ["code-vector-graph", "--repo-path", test_repo]), \
-             patch("main.run_pipeline", side_effect=KeyboardInterrupt()):
+             patch("code_vector_graph.ingestion.pipeline.run_pipeline", side_effect=KeyboardInterrupt()):
             exit_code = main()
             assert exit_code == 130
 
     def test_main_unexpected_error(self, test_repo):
         """Test main handles unexpected errors."""
         with patch("sys.argv", ["code-vector-graph", "--repo-path", test_repo]), \
-             patch("main.run_pipeline", side_effect=Exception("Test error")):
+             patch("code_vector_graph.ingestion.pipeline.run_pipeline", side_effect=Exception("Test error")):
             exit_code = main()
             assert exit_code == 1
 
@@ -477,10 +479,10 @@ class TestMainEntryPoint:
 class TestCLIHelp:
     """Test CLI help functionality."""
 
-    @pytest.mark.skip(reason="src.cli has no __main__.py; covered by test_cli_parser_help")
+    @pytest.mark.skip(reason="code_vector_graph.cli.ingest is invoked via the cvg-ingest console script")
     def test_cli_help(self):
         result = subprocess.run(
-            [sys.executable, "-m", "src.cli", "--help"],
+            [sys.executable, "-m", "code_vector_graph.cli.ingest", "--help"],
             capture_output=True,
             text=True,
             cwd=str(Path(__file__).parent.parent),
@@ -491,7 +493,7 @@ class TestCLIHelp:
 
     def test_cli_parser_help(self):
         """Test CLI parser help output directly."""
-        from src.cli import create_parser
+        from code_vector_graph.cli.ingest import create_parser
 
         parser = create_parser()
         help_text = parser.format_help()

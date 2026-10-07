@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Code Vector Graph</title>
+  <script src="/static/vendor/tailwind.min.js"></script>
+  <script>
+    tailwind.config = {
+      darkMode: "class",
+      theme: { extend: { fontFamily: { mono: ["ui-monospace","SFMono-Regular","Menlo","monospace"] } } }
+    };
+  </script>
+  <link rel="stylesheet" href="/static/vendor/github-dark.css" />
+  <link rel="stylesheet" href="/static/css/styles.css" />
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen font-sans" x-data>
+
+<!-- ============================================================
+     APP SHELL
+     The six view partials below are inlined server-side by
+     api/app.py::_render_index (regex on the @include markers).
+     ============================================================ -->
+<div class="flex h-screen overflow-hidden">
+
+  <!-- Sidebar -->
+  <aside class="w-60 flex-shrink-0 bg-gray-900 border-r border-gray-800 flex flex-col">
+    <div class="p-4 border-b border-gray-800">
+      <div class="text-sm font-bold text-blue-400 truncate">Code Vector Graph</div>
+      <div class="text-xs text-gray-500 mt-0.5">Knowledge Dashboard</div>
+    </div>
+
+    <!-- Health dots -->
+    <div class="px-4 py-2 border-b border-gray-800 flex gap-3 text-xs text-gray-400">
+      <template x-if="$store.app.healthLoaded">
+        <div class="flex gap-3">
+          <span class="flex items-center gap-1">
+            <span class="inline-block w-2 h-2 rounded-full" :class="$store.app.statusDot($store.app.health?.qdrant?.ok)"></span> Qdrant
+          </span>
+          <span class="flex items-center gap-1">
+            <span class="inline-block w-2 h-2 rounded-full" :class="$store.app.statusDot($store.app.health?.neo4j?.ok)"></span> Neo4j
+          </span>
+          <span class="flex items-center gap-1">
+            <span class="inline-block w-2 h-2 rounded-full" :class="$store.app.statusDot($store.app.health?.mcp_session?.ok)"></span> MCP
+          </span>
+        </div>
+      </template>
+      <template x-if="!$store.app.healthLoaded">
+        <span class="text-gray-600">checking…</span>
+      </template>
+    </div>
+
+    <!-- Scope selectors -->
+    <div class="px-3 py-3 border-b border-gray-800 space-y-2">
+      <div>
+        <label class="block text-[10px] uppercase tracking-wide text-gray-500 mb-1">Application</label>
+        <select
+          class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-blue-500"
+          :value="$store.app.app"
+          @change="$store.app.setScope($event.target.value, '')"
+        >
+          <option value="">All applications</option>
+          <template x-for="a in $store.app.apps" :key="a.name">
+            <option :value="a.name" x-text="a.name" :selected="a.name === $store.app.app"></option>
+          </template>
+        </select>
+      </div>
+      <div>
+        <label class="block text-[10px] uppercase tracking-wide text-gray-500 mb-1">Repository</label>
+        <select
+          class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-xs text-gray-200 disabled:opacity-40 focus:outline-none focus:border-blue-500"
+          :disabled="!$store.app.app"
+          :value="$store.app.repo"
+          @change="$store.app.setScope($store.app.app, $event.target.value)"
+        >
+          <option value="">All repos in app</option>
+          <template x-for="r in $store.app.repos" :key="r.name">
+            <option :value="r.name" x-text="r.name" :selected="r.name === $store.app.repo"></option>
+          </template>
+        </select>
+      </div>
+      <template x-if="$store.app.appsLoaded && !$store.app.apps.length">
+        <p class="text-[11px] leading-snug text-gray-500">
+          No applications indexed yet — run <code class="text-gray-400">cvg-ingest</code>;
+          set <code class="text-gray-400">CVG_REPOS_ROOT</code> to group repos into one application.
+        </p>
+      </template>
+      <template x-if="$store.app.appsError">
+        <p class="text-[11px] leading-snug text-red-400" x-text="$store.app.appsError"></p>
+      </template>
+    </div>
+
+    <!-- Nav -->
+    <nav class="flex-1 p-2 space-y-1 overflow-y-auto">
+      <template x-for="item in [
+        {id:'apps',     path:'/apps',     icon:'📦', label:'Applications'},
+        {id:'vectors',  path:'/vectors',  icon:'🔍', label:'Vectors'},
+        {id:'graph',    path:'/graph',    icon:'🕸',  label:'Graph'},
+        {id:'chat',     path:'/chat',     icon:'💬', label:'AI Chat'},
+        {id:'overview', path:'/overview', icon:'🏠', label:'System'},
+      ]" :key="item.id">
+        <button
+          @click="$store.app.nav(item.path)"
+          class="w-full flex items-center gap-2 px-3 py-2 rounded text-sm text-left transition-colors hover:bg-gray-800"
+          :class="$store.app.view === item.id ? 'nav-item-active' : 'text-gray-300'"
+        >
+          <span x-text="item.icon"></span>
+          <span x-text="item.label"></span>
+        </button>
+      </template>
+    </nav>
+
+    <!-- Scope label + theme toggle -->
+    <div class="p-3 border-t border-gray-800 space-y-2">
+      <div class="text-[11px] text-gray-500 truncate" :title="$store.app.scopeLabel">
+        Scope: <span class="text-gray-300" x-text="$store.app.scopeLabel"></span>
+      </div>
+      <button @click="$store.app.toggleDark()" class="text-xs text-gray-500 hover:text-gray-300 flex items-center gap-1">
+        <span x-text="$store.app.dark ? '☀️ Light' : '🌙 Dark'"></span>
+      </button>
+    </div>
+  </aside>
+
+  <!-- Main content -->
+  <main class="flex-1 overflow-auto bg-gray-950">
+    <!-- @include views/apps.html -->
+    <!-- @include views/app.html -->
+    <!-- @include views/vectors.html -->
+    <!-- @include views/graph.html -->
+    <!-- @include views/chat.html -->
+    <!-- @include views/overview.html -->
+  </main>
+</div>
+
+<!-- Toast pill -->
+<template x-if="$store.app.toast">
+  <div class="toast" x-text="$store.app.toast" @click="$store.app.toast = ''"></div>
+</template>
+
+<!-- Scripts: non-Alpine libs first (sync), then app.js module, then Alpine last (defer) -->
+<!-- app.js MUST come before alpine.min.js so the alpine:init listener is registered before Alpine fires it -->
+<script src="/static/vendor/highlight.min.js"></script>
+<script src="/static/vendor/marked.min.js"></script>
+<script src="/static/vendor/purify.min.js"></script>
+<script src="/static/vendor/cytoscape.min.js"></script>
+<script type="module" src="/static/js/app.js"></script>
+<script src="/static/vendor/alpine.min.js" defer></script>
+
+<script>
+  // Configure marked. The default renderer already emits escaped
+  // <pre><code class="language-x"> blocks, so no custom renderer is needed.
+  if (typeof marked !== 'undefined') {
+    marked.use({ gfm: true, breaks: true });
+  }
+  // Expose copyToClipboard globally for inline Alpine usage
+  window.copyToClipboard = async (text) => {
+    try { await navigator.clipboard.writeText(text); return true; }
+    catch { return false; }
+  };
+</script>
+</body>
+</html>

@@ -1,0 +1,384 @@
+<!-- ==================== APPLICATION PAGE (#/apps/<name>) ==================== -->
+<div x-show="$store.app.screen === 'app'" x-data="appView">
+  <div class="h-screen flex flex-col">
+    <!-- Header -->
+    <div class="p-4 border-b border-gray-800 bg-gray-900">
+      <div class="flex items-center gap-3 flex-wrap">
+        <button @click="store.nav('/apps')" class="text-gray-500 hover:text-gray-300 text-sm">← Applications</button>
+        <h1 class="text-lg font-semibold text-gray-100" x-text="name"></h1>
+        <template x-if="repoInfo">
+          <span class="text-xs px-1.5 py-0.5 rounded bg-gray-800 text-indigo-300 border border-gray-700 font-mono" x-text="repoInfo.name"></span>
+        </template>
+      </div>
+
+      <!-- Repo tabs (all repos + one entry per repo) -->
+      <div class="flex flex-wrap gap-1 mt-3">
+        <button
+          @click="selectRepo('')"
+          class="text-xs px-2.5 py-1 rounded-full border"
+          :class="!repo ? 'bg-blue-600 border-blue-600 text-white' : 'border-gray-700 text-gray-400 hover:text-gray-200'"
+        >All repos</button>
+        <template x-for="r in repos" :key="r.name">
+          <button
+            @click="selectRepo(r.name)"
+            class="text-xs px-2.5 py-1 rounded-full border font-mono"
+            :class="repo === r.name ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-gray-700 text-gray-400 hover:text-gray-200'"
+            x-text="r.name"
+          ></button>
+        </template>
+      </div>
+
+      <!-- Tab strip -->
+      <div class="flex gap-4 mt-3 border-b border-gray-800 -mb-4">
+        <template x-for="t in tabs" :key="t">
+          <button
+            @click="setTab(t)"
+            class="text-sm pb-2 border-b-2 capitalize"
+            :class="tab === t ? 'border-blue-500 text-blue-400' : 'border-transparent text-gray-500 hover:text-gray-300'"
+            x-text="t"
+          ></button>
+        </template>
+      </div>
+    </div>
+
+    <div class="flex-1 overflow-y-auto">
+
+      <!-- ---------------- OVERVIEW TAB ---------------- -->
+      <template x-if="tab === 'overview'">
+        <div class="p-6">
+          <template x-if="detailLoading && !detail">
+            <div class="grid lg:grid-cols-3 gap-4">
+              <div class="lg:col-span-2 skeleton h-64 rounded-lg"></div>
+              <div class="skeleton h-64 rounded-lg"></div>
+            </div>
+          </template>
+          <template x-if="detailError">
+            <div class="p-3 bg-red-900 border border-red-700 rounded text-sm text-red-200 mb-4" x-text="detailError"></div>
+          </template>
+
+          <template x-if="detail">
+            <div class="grid lg:grid-cols-3 gap-4">
+              <!-- Main column: per-repo overview cards -->
+              <div class="lg:col-span-2 space-y-4">
+                <template x-for="r in repos" :key="r.name">
+                  <section class="bg-gray-900 border border-gray-800 rounded-lg p-5">
+                    <div class="flex items-center gap-2 mb-3">
+                      <h2 class="text-sm font-semibold text-gray-200 font-mono" x-text="r.name"></h2>
+                      <span class="text-[10px] px-1.5 py-0.5 rounded bg-gray-800 text-gray-400 border border-gray-700" x-show="r.source === 'derived'">derived</span>
+                      <button @click="selectRepo(r.name, {tab:'files'})" class="btn-ghost ml-auto">Browse files</button>
+                    </div>
+                    <div class="text-xs font-mono text-gray-500 truncate mb-3" x-text="r.root"></div>
+
+                    <template x-if="!isFallback(r)">
+                      <div>
+                        <div class="prose-dark" x-html="md(r.overview?.overview)"></div>
+                        <div class="prose-dark mt-3" x-show="r.overview?.how_it_works">
+                          <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wide">How it fits together</h3>
+                          <div x-html="md(r.overview?.how_it_works)"></div>
+                        </div>
+                      </div>
+                    </template>
+                    <template x-if="isFallback(r)">
+                      <div class="text-sm text-gray-400 space-y-2">
+                        <p x-text="r.overview?.summary"></p>
+                        <p class="text-xs text-gray-500">No architecture overview yet. Generate one with:</p>
+                        <pre class="bg-gray-950 border border-gray-800 rounded p-2 text-xs text-gray-300 overflow-x-auto"><code x-text="r.overview?.hint || `cvg-okf-build --repo-path ${r.root} --app-name ${name} && cvg-okf-sync`"></code></pre>
+                      </div>
+                    </template>
+
+                    <!-- Repo top modules -->
+                    <template x-if="(r.top_modules || []).length">
+                      <div class="mt-4">
+                        <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Top modules</h3>
+                        <div class="flex flex-wrap gap-1.5">
+                          <template x-for="m in r.top_modules" :key="m.path">
+                            <button @click="openModule(r, m)" class="text-xs font-mono px-2 py-0.5 rounded bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700">
+                              <span x-text="m.path || '.'"></span>
+                              <span class="text-gray-500" x-text="` (${m.file_count})`"></span>
+                            </button>
+                          </template>
+                        </div>
+                      </div>
+                    </template>
+                  </section>
+                </template>
+              </div>
+
+              <!-- Aside: aggregates -->
+              <aside class="space-y-4">
+                <div class="bg-gray-900 border border-gray-800 rounded-lg p-4">
+                  <h2 class="text-sm font-medium text-gray-400 mb-3">Stats</h2>
+                  <div class="flex gap-4 text-xs mb-3">
+                    <div><div class="text-gray-500">Files</div><div class="text-gray-100 font-mono" x-text="fmt(detail.counts?.files)"></div></div>
+                    <div><div class="text-gray-500">Chunks</div><div class="text-gray-100 font-mono" x-text="fmt(detail.counts?.chunks)"></div></div>
+                    <div><div class="text-gray-500">Wiki</div><div class="text-gray-100 font-mono" x-text="fmt(detail.counts?.wiki_pages)"></div></div>
+                  </div>
+                  <div class="space-y-1.5">
+                    <template x-for="[label, count] in labelBars()" :key="label">
+                      <div class="flex items-center gap-2">
+                        <span class="text-[11px] w-20 text-gray-300 truncate" x-text="label"></span>
+                        <div class="flex-1 bg-gray-800 rounded-full h-1.5">
+                          <div class="h-1.5 rounded-full" :style="`width:${barWidth(count, maxLabelCount())}; background:${labelColor(label).cy}`"></div>
+                        </div>
+                        <span class="text-[11px] text-gray-400 w-8 text-right font-mono" x-text="fmt(count)"></span>
+                      </div>
+                    </template>
+                  </div>
+                </div>
+
+                <div class="bg-gray-900 border border-gray-800 rounded-lg p-4">
+                  <h2 class="text-sm font-medium text-gray-400 mb-3">Languages</h2>
+                  <div class="flex flex-wrap gap-1.5">
+                    <template x-for="c in langChips()" :key="c.lang">
+                      <span class="flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded bg-gray-800 text-gray-300 border border-gray-700">
+                        <span class="inline-block w-2 h-2 rounded-full" :style="`background:${c.color}`"></span>
+                        <span x-text="c.lang"></span>
+                        <span class="text-gray-500" x-text="fmt(c.count)"></span>
+                      </span>
+                    </template>
+                  </div>
+                </div>
+
+                <template x-if="wikiTop.length">
+                  <div class="bg-gray-900 border border-gray-800 rounded-lg p-4">
+                    <h2 class="text-sm font-medium text-gray-400 mb-3">Top wiki pages</h2>
+                    <div class="space-y-1.5">
+                      <template x-for="w in wikiTop" :key="w.concept_id">
+                        <button @click="openWiki(w.concept_id)" class="w-full text-left">
+                          <div class="text-xs text-amber-300 truncate" x-text="w.title"></div>
+                          <div class="text-[11px] text-gray-500 truncate" x-text="w.summary"></div>
+                        </button>
+                      </template>
+                    </div>
+                  </div>
+                </template>
+              </aside>
+            </div>
+          </template>
+        </div>
+      </template>
+
+      <!-- ---------------- FILES TAB ---------------- -->
+      <template x-if="tab === 'files'">
+        <div class="h-full flex" style="min-height: calc(100vh - 10rem)">
+          <!-- Tree column -->
+          <div class="w-72 border-r border-gray-800 flex flex-col flex-shrink-0">
+            <nav class="p-2 text-xs flex flex-wrap items-center gap-1 border-b border-gray-800">
+              <button @click="openDir('')" class="text-blue-400 hover:underline" x-text="repo || 'repos'"></button>
+              <template x-for="c in crumbs" :key="c.path">
+                <span class="text-gray-600">/</span>
+                <button @click="openDir(c.path)" x-text="c.name" class="text-blue-400 hover:underline"></button>
+              </template>
+            </nav>
+            <div class="flex-1 overflow-y-auto">
+              <template x-if="treeLoading">
+                <div class="p-3 space-y-1.5">
+                  <template x-for="i in 6" :key="i"><div class="skeleton h-5"></div></template>
+                </div>
+              </template>
+              <template x-if="treeError">
+                <div class="p-3 text-xs text-red-400" x-text="treeError"></div>
+              </template>
+
+              <!-- Repo list (no repo selected yet) -->
+              <template x-for="r in treeRepos" :key="r.name">
+                <button @click="selectRepo(r.name, {tab:'files'})" class="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-900 flex gap-2 items-center">
+                  <span>📦</span>
+                  <span class="font-mono truncate" x-text="r.name"></span>
+                  <span class="ml-auto text-xs text-gray-500" x-text="r.file_count"></span>
+                </button>
+              </template>
+
+              <!-- Directories -->
+              <template x-for="d in treeDirs" :key="d.path">
+                <button @click="openDir(d.path)" class="w-full text-left px-3 py-1 text-sm hover:bg-gray-900 flex gap-2 items-center">
+                  <span>📁</span>
+                  <span class="truncate" x-text="d.name"></span>
+                  <span class="ml-auto text-xs text-gray-500" x-text="d.file_count"></span>
+                </button>
+              </template>
+
+              <!-- Files -->
+              <template x-for="f in treeFiles" :key="f.path">
+                <button
+                  @click="openFile(f.path)"
+                  class="w-full text-left px-3 py-1 text-sm hover:bg-gray-900 flex gap-2 items-center"
+                  :class="file?.file?.rel_path === f.path && 'bg-gray-900 border-l-2 border-blue-500'"
+                >
+                  <span>📄</span>
+                  <span class="truncate" x-text="f.name"></span>
+                  <span class="ml-auto text-[10px] px-1 rounded" :class="langBadge(f.language)" x-text="f.language"></span>
+                </button>
+              </template>
+
+              <template x-if="!treeLoading && !treeRepos.length && !treeDirs.length && !treeFiles.length">
+                <div class="p-4 text-xs text-gray-500">Empty.</div>
+              </template>
+            </div>
+          </div>
+
+          <!-- File pane -->
+          <div class="flex-1 flex flex-col min-w-0">
+            <template x-if="fileLoading">
+              <div class="flex-1 flex items-center justify-center text-gray-600 text-sm">Loading…</div>
+            </template>
+            <template x-if="fileError">
+              <div class="p-4 text-sm text-red-400" x-text="fileError"></div>
+            </template>
+            <template x-if="!fileLoading && !file && !fileError">
+              <div class="flex-1 flex items-center justify-center text-gray-600 text-sm">Select a file</div>
+            </template>
+
+            <template x-if="file">
+              <div class="flex-1 flex flex-col min-h-0">
+                <header class="p-3 border-b border-gray-800 flex items-center gap-2 flex-wrap">
+                  <span class="font-mono text-sm text-blue-400 truncate" x-text="file.file?.rel_path"></span>
+                  <div class="ml-auto flex gap-1.5 flex-wrap">
+                    <button @click="showInVectors()" class="btn-ghost">Chunks in Vectors</button>
+                    <button @click="openInGraph()" class="btn-ghost">Open in Graph</button>
+                    <button @click="askInChat()" class="btn-ghost">Ask in Chat</button>
+                  </div>
+                </header>
+                <div class="flex-1 flex min-h-0 overflow-hidden">
+                  <!-- Symbols -->
+                  <div class="w-56 border-r border-gray-800 overflow-y-auto p-2 flex-shrink-0">
+                    <template x-if="!fileSymbols.length">
+                      <p class="text-xs text-gray-600 p-2">No symbols.</p>
+                    </template>
+                    <template x-for="s in fileSymbols" :key="s.id">
+                      <button
+                        @click="focusSymbol(s)"
+                        class="w-full text-left text-xs py-1 px-1 flex gap-1.5 items-start rounded hover:bg-gray-900"
+                        :class="activeSymbol?.id === s.id && 'bg-gray-900'"
+                      >
+                        <span class="w-2 h-2 rounded-full mt-1 flex-shrink-0" :style="`background:${labelColor(s.label).cy}`"></span>
+                        <span class="font-mono truncate" x-text="s.name"></span>
+                        <span class="ml-auto text-gray-600 flex-shrink-0" x-text="s.start_line"></span>
+                      </button>
+                    </template>
+                  </div>
+
+                  <!-- Code chunks -->
+                  <div class="flex-1 overflow-y-auto p-3 space-y-3" x-ref="chunks">
+                    <template x-if="!fileChunks.length">
+                      <p class="text-xs text-gray-600">No chunks indexed for this file.</p>
+                    </template>
+                    <template x-for="c in fileChunks" :key="c.id">
+                      <div :id="`chunk-${c.id}`" class="rounded border overflow-hidden" :class="activeChunkId === c.id ? 'chunk-active' : 'border-gray-800'">
+                        <div class="px-2 py-1 text-xs text-gray-500 flex gap-2 bg-gray-900 items-center">
+                          <span x-text="chunkLabel(c)"></span>
+                          <span class="text-green-400" x-show="chunkTitle(c)" x-text="chunkTitle(c)"></span>
+                          <button @click="copyChunk(c)" class="ml-auto text-gray-500 hover:text-gray-300" x-text="copiedChunk === c.id ? '✓ Copied' : 'Copy'"></button>
+                        </div>
+                        <pre><code :class="`language-${chunkLang()}`" x-text="c.text_content"></code></pre>
+                      </div>
+                    </template>
+                  </div>
+
+                  <!-- Wiki cards -->
+                  <div class="w-72 border-l border-gray-800 overflow-y-auto p-3 space-y-3 flex-shrink-0">
+                    <template x-if="!fileWiki.length">
+                      <p class="text-xs text-gray-500">No wiki page documents this file. Run <code class="text-gray-400">cvg-okf-build</code> + <code class="text-gray-400">cvg-okf-sync</code>.</p>
+                    </template>
+                    <template x-for="w in fileWiki" :key="w.concept_id">
+                      <article class="bg-gray-900 border border-amber-900/50 rounded p-3">
+                        <div class="text-[10px] uppercase text-amber-400" x-text="w.type"></div>
+                        <button @click="openWiki(w.concept_id)" class="text-sm font-medium text-gray-100 hover:underline text-left block" x-text="w.title"></button>
+                        <p class="text-xs text-gray-400 mt-1" x-text="w.summary"></p>
+                        <details class="mt-2" x-show="w.overview">
+                          <summary class="text-xs text-gray-500 cursor-pointer">Overview</summary>
+                          <div class="prose-dark text-xs mt-1" x-html="md(w.overview)"></div>
+                        </details>
+                      </article>
+                    </template>
+                  </div>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+      </template>
+
+      <!-- ---------------- WIKI TAB ---------------- -->
+      <template x-if="tab === 'wiki'">
+        <div class="h-full flex" style="min-height: calc(100vh - 10rem)">
+          <!-- List -->
+          <div class="w-80 border-r border-gray-800 flex flex-col flex-shrink-0" x-show="!wikiPage || !concept">
+            <div class="p-2 border-b border-gray-800 space-y-1.5">
+              <input type="text" placeholder="Filter…" x-model="wikiFilter" class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-gray-200" />
+              <select x-model="wikiType" @change="setWikiType(wikiType)" class="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-gray-300">
+                <option value="">All types</option>
+                <template x-for="t in wikiTypes" :key="t"><option :value="t" x-text="t"></option></template>
+              </select>
+            </div>
+            <div class="flex-1 overflow-y-auto">
+              <template x-if="wikiLoading"><div class="p-3 space-y-1.5"><template x-for="i in 6"><div class="skeleton h-8"></div></template></div></template>
+              <template x-if="wikiError"><div class="p-3 text-xs text-red-400" x-text="wikiError"></div></template>
+              <template x-if="!wikiLoading && !filteredWikiPages.length"><div class="p-4 text-xs text-gray-500">No wiki pages in scope yet.</div></template>
+              <template x-for="[type, pages] in wikiGroups" :key="type">
+                <div>
+                  <div class="px-3 py-1 text-[10px] uppercase tracking-wide text-gray-500 bg-gray-950 sticky top-0" x-text="type"></div>
+                  <template x-for="p in pages" :key="p.concept_id">
+                    <button @click="openWiki(p.concept_id)" class="w-full text-left px-3 py-2 hover:bg-gray-900 border-b border-gray-800/50">
+                      <div class="text-sm text-gray-200 truncate" x-text="p.title"></div>
+                      <div class="text-[11px] text-gray-500 truncate" x-text="p.summary"></div>
+                      <div class="text-[10px] text-indigo-400 font-mono mt-0.5" x-show="!repo" x-text="p.repo"></div>
+                    </button>
+                  </template>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <!-- Page -->
+          <div class="flex-1 overflow-y-auto p-6" x-ref="wikiBody">
+            <template x-if="!concept">
+              <div class="h-full flex items-center justify-center text-gray-600 text-sm">← Select a page</div>
+            </template>
+            <template x-if="concept">
+              <div>
+                <button @click="backToWikiList()" class="text-xs text-gray-500 hover:text-gray-300 mb-3">← All pages</button>
+                <template x-if="wikiPageLoading"><div class="skeleton h-48 rounded-lg"></div></template>
+                <template x-if="wikiPageError"><div class="p-3 bg-red-900 border border-red-700 rounded text-sm text-red-200" x-text="wikiPageError"></div></template>
+                <template x-if="wikiPage">
+                  <div class="max-w-3xl">
+                    <div class="flex items-center gap-2 mb-1 flex-wrap">
+                      <span class="text-[10px] uppercase px-1.5 py-0.5 rounded bg-gray-800 text-gray-400 border border-gray-700" x-text="wikiPage.page?.type"></span>
+                      <span class="text-[10px] px-1.5 py-0.5 rounded bg-gray-800 text-indigo-300 border border-gray-700 font-mono" x-text="wikiPage.page?.repo"></span>
+                    </div>
+                    <h2 class="text-lg font-semibold text-gray-100 mb-2" x-text="wikiPage.page?.title"></h2>
+                    <p class="text-sm text-gray-400 mb-4" x-text="wikiPage.page?.summary"></p>
+
+                    <div class="prose-dark" x-html="md(wikiPage.page?.overview)"></div>
+                    <div class="prose-dark mt-3" x-show="wikiPage.page?.how_it_works">
+                      <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wide">How it works</h3>
+                      <div x-html="md(wikiPage.page?.how_it_works)"></div>
+                    </div>
+
+                    <template x-if="wikiResourcePath(wikiPage.page)">
+                      <button @click="openWikiResource(wikiPage.page)" class="btn-ghost mt-4">Open file</button>
+                    </template>
+                    <template x-if="wikiPage.page?.resource && !wikiResourcePath(wikiPage.page)">
+                      <a :href="wikiPage.page.resource" target="_blank" rel="noopener" class="btn-ghost mt-4 inline-block">Open source ↗</a>
+                    </template>
+
+                    <template x-if="(wikiPage.references || []).length">
+                      <div class="mt-6">
+                        <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Related</h3>
+                        <div class="flex flex-wrap gap-1.5">
+                          <template x-for="ref in wikiPage.references" :key="ref.concept_id">
+                            <button @click="openWiki(ref.concept_id)" class="text-xs px-2 py-0.5 rounded bg-gray-800 hover:bg-gray-700 text-amber-300 border border-gray-700" x-text="ref.title"></button>
+                          </template>
+                        </div>
+                      </div>
+                    </template>
+                  </div>
+                </template>
+              </div>
+            </template>
+          </div>
+        </div>
+      </template>
+    </div>
+  </div>
+</div>

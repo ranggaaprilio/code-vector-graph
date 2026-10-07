@@ -1,0 +1,121 @@
+<!-- ==================== APPLICATIONS (#/apps) ==================== -->
+<div x-show="$store.app.screen === 'apps'" x-data="appsView" x-init="init()">
+  <div class="p-6">
+    <div class="flex items-center gap-3 mb-6 flex-wrap">
+      <h1 class="text-xl font-semibold text-gray-100">Applications</h1>
+      <span class="text-xs text-gray-500" x-text="`${filtered.length} of ${(store.apps || []).length}`"></span>
+      <div class="flex-1"></div>
+      <input
+        type="text" placeholder="Filter applications or repos…" x-model="filter"
+        class="bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-200 placeholder-gray-500 w-64 focus:outline-none focus:border-blue-500"
+      />
+      <button @click="refresh()" :disabled="refreshing" class="btn-ghost" x-text="refreshing ? 'Refreshing…' : '↻ Refresh'"></button>
+    </div>
+
+    <!-- Error -->
+    <template x-if="store.appsError">
+      <div class="mb-4 p-3 bg-red-900 border border-red-700 rounded text-sm text-red-200">
+        <span x-text="store.appsError"></span>
+        <button @click="refresh()" class="ml-2 underline hover:text-white">retry</button>
+      </div>
+    </template>
+
+    <!-- Skeletons -->
+    <template x-if="loading">
+      <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        <template x-for="i in 3" :key="i">
+          <div class="skeleton h-40 rounded-lg"></div>
+        </template>
+      </div>
+    </template>
+
+    <!-- Empty -->
+    <template x-if="!loading && !store.appsError && !(store.apps || []).length">
+      <div class="max-w-xl bg-gray-900 border border-gray-800 rounded-lg p-6 text-sm text-gray-400 space-y-2">
+        <p class="text-gray-200 font-medium">No indexed applications found.</p>
+        <p>Index a repository first:</p>
+        <pre class="bg-gray-950 border border-gray-800 rounded p-2 text-xs text-gray-300 overflow-x-auto"><code>cvg-ingest --repo-path /path/to/repo</code></pre>
+        <p>
+          Set <code class="text-gray-300">CVG_REPOS_ROOT</code> (e.g. your <code class="text-gray-300">~/Repository</code> folder)
+          to group several repositories under one application, or use
+          <code class="text-gray-300">CVG_APP_MAP</code> for an explicit grouping.
+        </p>
+      </div>
+    </template>
+
+    <!-- No match for the filter -->
+    <template x-if="!loading && (store.apps || []).length && !filtered.length">
+      <div class="text-sm text-gray-500">No application matches “<span x-text="filter"></span>”.</div>
+    </template>
+
+    <!-- Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+      <template x-for="a in filtered" :key="a.name">
+        <div
+          @click="open(a)"
+          class="bg-gray-900 border border-gray-800 hover:border-blue-600 rounded-lg p-4 cursor-pointer transition-colors flex flex-col gap-3"
+        >
+          <div class="flex items-start gap-2">
+            <span class="text-lg leading-none">📦</span>
+            <div class="min-w-0">
+              <div class="text-sm font-semibold text-gray-100 truncate" x-text="a.name"></div>
+              <div class="text-xs text-gray-500" x-text="`${(a.repos || []).length} repositor${(a.repos || []).length === 1 ? 'y' : 'ies'}`"></div>
+            </div>
+            <div class="flex-1"></div>
+            <div class="flex flex-col items-end gap-1">
+              <template x-if="a.has_wiki">
+                <span class="badge-wiki">wiki</span>
+              </template>
+              <template x-if="isDerived(a)">
+                <span class="text-[10px] px-1.5 py-0.5 rounded bg-gray-800 text-gray-400 border border-gray-700" title="Grouped from file paths; run cvg-backfill-repo to record it">derived</span>
+              </template>
+            </div>
+          </div>
+
+          <!-- Repo chips -->
+          <div class="flex flex-wrap gap-1">
+            <template x-for="r in a.repos || []" :key="r.name">
+              <button
+                @click.stop="openRepo(a, r)"
+                class="text-[11px] font-mono px-1.5 py-0.5 rounded bg-gray-800 text-indigo-300 border border-gray-700 hover:border-indigo-500 truncate max-w-full"
+                :title="r.root"
+                x-text="r.name"
+              ></button>
+            </template>
+          </div>
+
+          <!-- Counts -->
+          <div class="flex gap-4 text-xs">
+            <div>
+              <div class="text-gray-500">Files</div>
+              <div class="text-gray-100 font-mono" x-text="fmt(a.file_count)"></div>
+            </div>
+            <div>
+              <div class="text-gray-500">Chunks</div>
+              <div class="text-gray-100 font-mono" x-text="fmt(a.chunk_count)"></div>
+            </div>
+          </div>
+
+          <!-- Language bar -->
+          <template x-if="langBar(a).length">
+            <div>
+              <div class="flex h-1.5 rounded-full overflow-hidden bg-gray-800">
+                <template x-for="l in langBar(a)" :key="l.lang">
+                  <div :style="`width:${l.pct}%;background:${l.color}`" :title="`${l.lang}: ${fmt(l.count)}`"></div>
+                </template>
+              </div>
+              <div class="flex flex-wrap gap-2 mt-1.5">
+                <template x-for="l in langBar(a).slice(0, 4)" :key="l.lang">
+                  <span class="flex items-center gap-1 text-[11px] text-gray-400">
+                    <span class="inline-block w-2 h-2 rounded-full" :style="`background:${l.color}`"></span>
+                    <span x-text="l.lang"></span>
+                  </span>
+                </template>
+              </div>
+            </div>
+          </template>
+        </div>
+      </template>
+    </div>
+  </div>
+</div>

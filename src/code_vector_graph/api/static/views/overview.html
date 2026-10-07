@@ -1,0 +1,165 @@
+<!-- ==================== SYSTEM (#/overview) ==================== -->
+<div x-show="$store.app.screen === 'overview'" x-data="overviewView" x-init="init()">
+  <div class="p-6">
+    <div class="flex items-center gap-3 mb-6">
+      <h1 class="text-xl font-semibold text-gray-100">System</h1>
+      <span class="text-xs text-gray-500" x-text="`Scope: ${store.scopeLabel}`"></span>
+    </div>
+
+    <!-- Loading skeleton -->
+    <template x-if="loading">
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div class="skeleton h-32 rounded-lg"></div>
+        <div class="skeleton h-32 rounded-lg"></div>
+        <div class="skeleton h-32 rounded-lg"></div>
+        <div class="skeleton h-32 rounded-lg"></div>
+      </div>
+    </template>
+
+    <template x-if="!loading">
+      <div>
+        <!-- Error -->
+        <template x-if="error">
+          <div class="mb-4 p-3 bg-red-900 border border-red-700 rounded text-sm text-red-200" x-text="error"></div>
+        </template>
+
+        <!-- Stats cards -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+
+          <!-- Applications -->
+          <button
+            @click="store.nav('/apps')"
+            class="text-left bg-gray-900 border border-gray-800 hover:border-blue-600 rounded-lg p-4 transition-colors"
+          >
+            <h2 class="text-sm font-medium text-gray-400 mb-3">Indexed</h2>
+            <div class="flex justify-between text-sm">
+              <span class="text-gray-400">Applications</span>
+              <span class="text-gray-100 font-mono" x-text="appCount"></span>
+            </div>
+            <div class="flex justify-between text-sm mt-1">
+              <span class="text-gray-400">Repositories</span>
+              <span class="text-gray-100 font-mono" x-text="repoCount"></span>
+            </div>
+          </button>
+
+          <!-- System status -->
+          <div class="bg-gray-900 border border-gray-800 rounded-lg p-4">
+            <h2 class="text-sm font-medium text-gray-400 mb-3">System Status</h2>
+            <div class="space-y-2">
+              <template x-if="health">
+                <div class="space-y-2">
+                  <div class="flex justify-between items-center">
+                    <span class="text-sm text-gray-300">Qdrant</span>
+                    <span class="text-xs px-2 py-0.5 rounded-full" :class="statusBadge(health.qdrant?.ok)" x-text="health.qdrant?.ok ? 'OK' : 'FAIL'"></span>
+                  </div>
+                  <div class="text-xs text-gray-500" x-text="health.qdrant?.url"></div>
+                  <div class="flex justify-between items-center">
+                    <span class="text-sm text-gray-300">Neo4j</span>
+                    <span class="text-xs px-2 py-0.5 rounded-full" :class="statusBadge(health.neo4j?.ok)" x-text="health.neo4j?.ok ? 'OK' : 'FAIL'"></span>
+                  </div>
+                  <div class="text-xs text-gray-500" x-text="health.neo4j?.uri"></div>
+                  <div class="flex justify-between items-center">
+                    <span class="text-sm text-gray-300">MCP Session</span>
+                    <span class="text-xs px-2 py-0.5 rounded-full" :class="statusBadge(health.mcp_session?.ok)" x-text="health.mcp_session?.ok ? 'OK' : 'Down'"></span>
+                  </div>
+                  <div class="flex justify-between items-center" x-show="health.config?.chat_provider">
+                    <span class="text-sm text-gray-300">Chat provider</span>
+                    <span class="text-xs text-gray-400 font-mono" x-text="health.config?.chat_provider"></span>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <!-- Collection stats -->
+          <div class="bg-gray-900 border border-gray-800 rounded-lg p-4">
+            <h2 class="text-sm font-medium text-gray-400 mb-3">Vector Collection</h2>
+            <template x-if="collection">
+              <div class="space-y-2">
+                <div class="text-xs text-blue-400 font-mono break-all" x-text="collection.collection"></div>
+                <div class="flex justify-between text-sm">
+                  <span class="text-gray-400">Points</span>
+                  <span class="text-gray-100 font-mono" x-text="(collection.points_count || 0).toLocaleString()"></span>
+                </div>
+                <div class="flex justify-between text-sm">
+                  <span class="text-gray-400">Dimensions</span>
+                  <span class="text-gray-100 font-mono" x-text="collection.vector_size"></span>
+                </div>
+                <div class="flex justify-between text-sm">
+                  <span class="text-gray-400">Distance</span>
+                  <span class="text-gray-100" x-text="collection.distance"></span>
+                </div>
+                <div class="flex justify-between text-sm">
+                  <span class="text-gray-400">Status</span>
+                  <span class="text-green-400" x-text="collection.status"></span>
+                </div>
+              </div>
+            </template>
+            <template x-if="!collection">
+              <p class="text-sm text-gray-500">No collection found. Run the indexing pipeline first.</p>
+            </template>
+          </div>
+
+          <!-- Graph stats -->
+          <div class="bg-gray-900 border border-gray-800 rounded-lg p-4">
+            <h2 class="text-sm font-medium text-gray-400 mb-3">Graph Database</h2>
+            <template x-if="graphStats">
+              <div class="space-y-1">
+                <div class="flex justify-between text-sm mb-2">
+                  <span class="text-gray-400">Total Nodes</span>
+                  <span class="text-gray-100 font-mono" x-text="(graphStats.node_total || 0).toLocaleString()"></span>
+                </div>
+                <div class="flex justify-between text-sm mb-3" x-show="graphStats.rel_total != null">
+                  <span class="text-gray-400">Total Rels</span>
+                  <span class="text-gray-100 font-mono" x-text="(graphStats.rel_total || 0).toLocaleString()"></span>
+                </div>
+                <div class="text-xs text-gray-500" x-show="graphStats.scope" x-text="graphStats.scope"></div>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- Node label chart -->
+        <template x-if="graphStats && topLabels().length">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="bg-gray-900 border border-gray-800 rounded-lg p-4">
+              <h2 class="text-sm font-medium text-gray-400 mb-3">Nodes by Label</h2>
+              <div class="space-y-2">
+                <template x-for="[label, count] in topLabels()" :key="label">
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs w-24 text-gray-300 truncate" x-text="label"></span>
+                    <div class="flex-1 bg-gray-800 rounded-full h-2">
+                      <div class="h-2 rounded-full" :style="`width:${barWidth(count, maxLabelCount())}; background:${labelColor(label).cy}`"></div>
+                    </div>
+                    <span class="text-xs text-gray-400 w-10 text-right font-mono" x-text="count.toLocaleString()"></span>
+                  </div>
+                </template>
+              </div>
+            </div>
+            <div class="bg-gray-900 border border-gray-800 rounded-lg p-4">
+              <h2 class="text-sm font-medium text-gray-400 mb-3">Relationships by Type</h2>
+              <template x-if="topRels().length">
+                <div class="space-y-2">
+                  <template x-for="[rel, count] in topRels()" :key="rel">
+                    <div class="flex items-center gap-2">
+                      <span class="text-xs w-28 text-gray-300 truncate" x-text="rel"></span>
+                      <div class="flex-1 bg-gray-800 rounded-full h-2">
+                        <div class="h-2 rounded-full bg-blue-500" :style="`width:${barWidth(count, maxRelCount())}`"></div>
+                      </div>
+                      <span class="text-xs text-gray-400 w-10 text-right font-mono" x-text="count.toLocaleString()"></span>
+                    </div>
+                  </template>
+                </div>
+              </template>
+              <template x-if="!topRels().length">
+                <p class="text-sm text-gray-500">Not available for a scoped application.</p>
+              </template>
+            </div>
+          </div>
+        </template>
+      </div>
+    </template>
+
+    <button @click="load()" class="btn-ghost mt-4">↻ Refresh</button>
+  </div>
+</div>
