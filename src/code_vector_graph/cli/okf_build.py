@@ -22,8 +22,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from code_vector_graph.config import (  # noqa: E402
-    DEEPSEEK_API_KEY,
-    DEEPSEEK_BASE_URL,
+    OKF_CONCURRENCY,
+    OKF_LLM_PROVIDER,
     OKF_MODEL_FLASH,
     OKF_MODEL_PRO,
     OKF_OUT_DIR,
@@ -38,14 +38,17 @@ logger = logging.getLogger(__name__)
 def create_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="cvg-okf-build",
-        description="Generate an OKF LLM wiki from a JS/TS repository using DeepSeek.",
+        description=(
+            "Generate an OKF LLM wiki from a JS/TS repository. The LLM is chosen by "
+            "OKF_LLM_PROVIDER: deepseek (cloud, default) or omlx (local oMLX server, e.g. Gemma)."
+        ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p.add_argument("--repo-path", default=".", help="Repository to document (default: .)")
     p.add_argument("--out-dir", default=OKF_OUT_DIR, help=f"Output bundle directory (default: {OKF_OUT_DIR})")
     p.add_argument("--model-flash", default=OKF_MODEL_FLASH, help=f"Model for concept pages (default: {OKF_MODEL_FLASH})")
     p.add_argument("--model-pro", default=OKF_MODEL_PRO, help=f"Model for the architecture overview (default: {OKF_MODEL_PRO})")
-    p.add_argument("--concurrency", type=int, default=6, help="Concurrent enrichment requests (default: 6)")
+    p.add_argument("--concurrency", type=int, default=OKF_CONCURRENCY, help=f"Concurrent enrichment requests (default: {OKF_CONCURRENCY})")
     p.add_argument("--labels", default=None, help="Comma-separated node labels to enrich (default: File,Class,Function,Method,Interface,TypeAlias)")
     p.add_argument("--exclude-labels", default=None, help="Comma-separated labels to exclude")
     p.add_argument("--repo-base-url", default=None, help="Base URL for `resource` links, e.g. https://github.com/org/repo/blob/main")
@@ -54,7 +57,7 @@ def create_parser() -> argparse.ArgumentParser:
     p.add_argument("--app-name", default=None, help="Application the repository belongs to (default: the repo name)")
     p.add_argument("--limit", type=int, default=None, help="Cap number of concepts (smoke tests)")
     p.add_argument("--force", action="store_true", help="Ignore the incremental cache; re-enrich everything")
-    p.add_argument("--dry-run", action="store_true", help="Build skeleton + bundle with metadata-only pages; no API calls")
+    p.add_argument("--dry-run", action="store_true", help="Build skeleton + bundle with metadata-only pages; no LLM calls")
     p.add_argument("--verbose", action="store_true", help="Verbose logging")
     return p
 
@@ -88,10 +91,11 @@ def main(argv: list[str] | None = None) -> int:
     client = None
     if not args.dry_run:
         try:
-            client = make_client(DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL)
+            client = make_client()
         except ValueError as exc:
             print(f"ERROR: {exc}", file=sys.stderr)
             return 1
+        logger.info("LLM provider: %s (flash=%s, pro=%s)", OKF_LLM_PROVIDER, args.model_flash, args.model_pro)
 
     pre_cache = {} if args.force else okf_cache.load_cache(args.out_dir)
     cached_before = 0
@@ -121,6 +125,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     stats = {
+        "provider": OKF_LLM_PROVIDER,
         "model_flash": args.model_flash,
         "model_pro": args.model_pro,
         "enriched": total,
@@ -144,13 +149,15 @@ def main(argv: list[str] | None = None) -> int:
 
     print("\nOKF wiki build complete")
     print(f"  Bundle:     {args.out_dir}")
+    if not args.dry_run:
+        print(f"  LLM:        {OKF_LLM_PROVIDER} ({args.model_flash} / {args.model_pro})")
     print(f"  Files:      {len(skeleton.files)}")
     print(f"  Concepts:   {total}  (pages written: {result['pages']})")
     if not args.dry_run:
         print(f"  Reused cache: {cached_before}  |  Newly enriched: {total - cached_before}")
     print("  By type:    " + ", ".join(f"{k}={v}" for k, v in sorted(result["counts"].items())))
     if args.dry_run:
-        print("  (dry run — metadata-only pages, no DeepSeek calls)")
+        print("  (dry run — metadata-only pages, no LLM calls)")
     return 0
 
 

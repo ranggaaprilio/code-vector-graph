@@ -3,8 +3,10 @@
 import gc
 import logging
 import sys
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any, Callable, Optional
 
 import torch
 from dotenv import load_dotenv
@@ -108,12 +110,30 @@ def check_qdrant_health(store: VectorStore) -> bool:
     return True
 
 
-def run_pipeline(args) -> dict:
+@dataclass
+class PipelineContext:
+    """Runtime state handed to an `after_index` hook (e.g. `--docs`), so it
+    can reuse the already-initialized embedder/stores instead of reloading
+    them."""
+
+    repo: RepoIdentity
+    collection_name: str
+    tokenizer_name: str
+    model_config: dict
+    graph_store: Any | None
+    store: Any | None
+    embedder: Any | None
+
+
+def run_pipeline(args, after_index: Optional[Callable[[PipelineContext], None]] = None) -> dict:
     """
     Run the full embedding pipeline.
 
     Args:
         args: Parsed CLI arguments
+        after_index: Optional hook invoked once indexing succeeds, with a
+            `PipelineContext`. Exceptions it raises are logged as warnings —
+            a failure here must never fail the code-indexing run it followed.
 
     Returns:
         Dictionary with pipeline statistics
@@ -513,6 +533,15 @@ def run_pipeline(args) -> dict:
             store.end_bulk_load()
         except Exception as e:
             logger.warning(f"Could not re-enable Qdrant indexing: {e}")
+
+    if after_index is not None:
+        try:
+            after_index(PipelineContext(
+                repo=repo, collection_name=collection_name, tokenizer_name=tokenizer_name,
+                model_config=model_config, graph_store=graph_store, store=store, embedder=embedder,
+            ))
+        except Exception as e:
+            logger.warning(f"after_index hook failed (code index is unaffected): {e}")
 
     if graph_store:
         graph_store.close()

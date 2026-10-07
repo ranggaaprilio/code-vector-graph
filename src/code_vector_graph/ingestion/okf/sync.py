@@ -124,6 +124,45 @@ def _parse_page(path: Path, bundle_root: Path) -> Optional[dict]:
 
     rel_path = path.relative_to(bundle_root).as_posix()
     concept_path = rel_path[:-3] if rel_path.endswith(".md") else rel_path
+
+    if fm.get("type") == "Feature":
+        # Feature pages carry their own frontmatter shape (see
+        # ingestion/okf/features/template.py) — no `resource`/`how_it_works`,
+        # and extra fields (`content`, `member_ids`, ...) consumed only by
+        # build_wiki_graph's Feature branch below.
+        from code_vector_graph.ingestion.okf.features.template import parse_sections as _feature_sections
+
+        return {
+            "path": concept_path,
+            "concept_id": fm.get("feature_id", "") or "",
+            "type": "Feature",
+            "title": fm.get("title", "") or concept_path,
+            "summary": fm.get("description", "") or "",
+            "overview": _feature_sections(body).get("Overview", ""),
+            "how_it_works": None,
+            "tags": fm.get("tags", []) or [],
+            "resource": "",
+            "source": fm.get("source", "llm") or "llm",
+            "file_path": "",
+            "language": fm.get("language", "") or "",
+            "related_paths": [],
+            "repo": repo,
+            "app": app,
+            "content": body.strip(),
+            "slug": fm.get("slug", "") or "",
+            "kind": fm.get("kind", "") or "other",
+            "members_hash": fm.get("members_hash", "") or "",
+            "member_files": [str(x) for x in (fm.get("member_files") or []) if isinstance(x, str)],
+            "member_ids": [str(x) for x in (fm.get("member_ids") or []) if isinstance(x, str)],
+            "stale": bool(fm.get("stale", False)),
+            "stale_since": fm.get("stale_since"),
+            "generated_at": fm.get("generated_at", "") or "",
+            "edited_at": fm.get("edited_at"),
+            "edited_members_hash": fm.get("edited_members_hash"),
+            "model": fm.get("model"),
+            "needs_reembed": bool(fm.get("needs_reembed", False)),
+        }
+
     resource = fm.get("resource", "") or ""
     return {
         "path": concept_path,
@@ -163,12 +202,51 @@ def parse_bundle(bundle_dir: str) -> list[dict]:
 
 def build_prose(concept: dict) -> str:
     """Text embedded into Qdrant for this concept."""
-    parts = [concept.get("title", ""), concept.get("summary", ""),
-             concept.get("overview", ""), concept.get("how_it_works", "")]
+    if concept.get("type") == "Feature":
+        # Feature pages have no how_it_works section; their prose is the
+        # whole validated body (see features/store.py:build_prose).
+        parts = [concept.get("title", ""), concept.get("summary", ""), concept.get("content", "")]
+    else:
+        parts = [concept.get("title", ""), concept.get("summary", ""),
+                 concept.get("overview", ""), concept.get("how_it_works", "")]
     return "\n\n".join(p.strip() for p in parts if p and p.strip()).strip()
 
 
 # --- Neo4j -----------------------------------------------------------------
+
+def _build_feature_pages(feature_concepts: list[dict]) -> "list":
+    """Reconstruct `FeaturePage`s from parsed Feature concept dicts, so a
+    disk re-import (e.g. after `cvg-reinit-graph --clear`) can reuse
+    `features.store.build_feature_graph` instead of duplicating its shape."""
+    from code_vector_graph.ingestion.okf.features.models import FeatureFrontmatter, FeaturePage
+
+    pages = []
+    for c in feature_concepts:
+        fm = FeatureFrontmatter(
+            title=c.get("title") or c["path"],
+            slug=c.get("slug") or "",
+            description=c.get("summary") or "",
+            app=c.get("app") or "",
+            repo=c.get("repo") or "",
+            feature_id=c.get("concept_id") or "",
+            kind=c.get("kind") or "other",
+            members_hash=c.get("members_hash") or "0" * 16,
+            member_files=c.get("member_files") or [],
+            member_ids=c.get("member_ids") or [],
+            source=c.get("source") or "llm",
+            stale=bool(c.get("stale", False)),
+            stale_since=c.get("stale_since"),
+            generated_at=c.get("generated_at") or "",
+            edited_at=c.get("edited_at"),
+            edited_members_hash=c.get("edited_members_hash"),
+            model=c.get("model"),
+            language=c.get("language") or "en",
+            tags=[t for t in (c.get("tags") or []) if isinstance(t, str)],
+            needs_reembed=bool(c.get("needs_reembed", False)),
+        )
+        pages.append(FeaturePage(fm=fm, body=c.get("content") or ""))
+    return pages
+
 
 def build_wiki_graph(concepts: list[dict]) -> tuple[list[dict], list[dict], dict[str, str]]:
     """Build WikiPage nodes + DOCUMENTS/REFERENCES relationships.
@@ -180,7 +258,10 @@ def build_wiki_graph(concepts: list[dict]) -> tuple[list[dict], list[dict], dict
     rels: list[dict] = []
     node_labels: dict[str, str] = {}
 
-    for c in concepts:
+    feature_concepts = [c for c in concepts if c.get("type") == "Feature" and c.get("concept_id")]
+    other_concepts = [c for c in concepts if c.get("type") != "Feature"]
+
+    for c in other_concepts:
         cid = c.get("concept_id")
         if not cid:
             continue  # cannot link a page with no documented node id
@@ -213,6 +294,23 @@ def build_wiki_graph(concepts: list[dict]) -> tuple[list[dict], list[dict], dict
             tgt = by_path.get(rp)
             if tgt and tgt.get("concept_id"):
                 rels.append(_rel("REFERENCES", wid, wiki_id(tgt["concept_id"])))
+
+    if feature_concepts:
+        from code_vector_graph.ingestion.okf.features.store import build_feature_graph
+        from code_vector_graph.repos import RepoIdentity
+
+        by_repo: dict[tuple[str, str], list] = {}
+        for c, page in zip(feature_concepts, _build_feature_pages(feature_concepts)):
+            by_repo.setdefault((c.get("app") or "", c.get("repo") or ""), []).append(page)
+        for (app_, repo_), repo_pages in by_repo.items():
+            # Member-node labels are unknown on a disk re-import (no skeleton
+            # available); upsert_relationships falls back to a label-less
+            # MATCH for those, which still creates the edge correctly.
+            repo_id = RepoIdentity(app=app_, name=repo_, root="").id
+            f_nodes, f_rels, f_labels = build_feature_graph(repo_pages, {}, repo_id)
+            nodes.extend(f_nodes)
+            rels.extend(f_rels)
+            node_labels.update(f_labels)
 
     return nodes, rels, node_labels
 

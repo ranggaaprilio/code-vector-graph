@@ -1,0 +1,113 @@
+/*
+ * Svelte Flow → design-system tokens (see styles/tokens.css). Rounded
+ * corners, soft hairline borders, no hard bevel. Scoped to .svelte-flow so
+ * nothing leaks into the rest of the dashboard.
+ */
+.svelte-flow {
+	--xy-background-color: var(--color-canvas);
+	--xy-background-pattern-color: var(--color-skeleton);
+
+	--xy-edge-stroke: var(--color-ink-muted);
+	--xy-edge-stroke-selected: var(--color-primary);
+	--xy-edge-stroke-width: 1.5;
+	--xy-edge-label-background-color: var(--color-canvas);
+	--xy-edge-label-color: var(--color-ink);
+
+	--xy-node-border-radius: 6px;
+	--xy-node-boxshadow-hover: none;
+	--xy-node-boxshadow-selected: none;
+	--xy-node-border: var(--border-hairline);
+	--xy-node-background-color: var(--color-canvas);
+	--xy-node-color: var(--color-ink);
+
+	--xy-handle-background-color: transparent;
+	--xy-handle-border-color: transparent;
+
+	--xy-selection-background-color: color-mix(in oklab, var(--color-primary) 10%, transparent);
+	--xy-selection-border: 1px dashed var(--color-primary);
+
+	--xy-controls-box-shadow: var(--shadow-card);
+	--xy-controls-button-background-color: var(--color-canvas);
+	--xy-controls-button-background-color-hover: var(--color-row-hover);
+	--xy-controls-button-color: var(--color-ink);
+	--xy-controls-button-color-hover: var(--color-ink);
+	--xy-controls-button-border-color: var(--color-hairline);
+
+	--xy-minimap-background-color: var(--color-canvas);
+	--xy-minimap-mask-background-color: color-mix(in oklab, var(--color-ink) 12%, transparent);
+	--xy-minimap-mask-stroke-color: var(--color-hairline-strong);
+	--xy-minimap-mask-stroke-width: 1;
+	--xy-minimap-node-stroke-color: var(--color-ink-muted);
+	--xy-minimap-node-stroke-width: 1;
+
+	--xy-attribution-background-color: var(--color-canvas);
+
+	font-family: var(--font-heading);
+}
+
+/* Handles exist only so edges have somewhere to attach; the user never wires. */
+.svelte-flow .svelte-flow__handle {
+	opacity: 0;
+	pointer-events: none;
+	min-width: 0;
+	min-height: 0;
+	width: 1px;
+	height: 1px;
+}
+
+/* Relationship type sits on the edge as a small rounded chip. */
+.svelte-flow .svelte-flow__edge-label {
+	font-family: var(--font-heading);
+	font-size: 9px;
+	font-weight: 600;
+	letter-spacing: 0.02em;
+	padding: 1px 5px;
+	border: var(--border-hairline);
+	border-radius: var(--radius-sm);
+}
+
+/* Node focus: the design system's ring, not the library's blue shadow. */
+.svelte-flow .svelte-flow__node.selectable:focus,
+.svelte-flow .svelte-flow__node.selectable:focus-visible {
+	box-shadow: none;
+	outline: var(--focus-ring-width) solid var(--focus-ring-color);
+	outline-offset: var(--focus-offset);
+}
+
+.svelte-flow .svelte-flow__node.selectable:focus:not(:focus-visible) {
+	outline: none;
+}
+
+/* Controls / minimap / attribution: rounded, hairline, soft elevation. */
+.svelte-flow .svelte-flow__controls {
+	border: var(--border-hairline);
+	border-radius: var(--radius-md);
+	overflow: hidden;
+}
+
+.svelte-flow .svelte-flow__controls-button {
+	border-radius: 0;
+	border-bottom: var(--border-hairline);
+}
+
+.svelte-flow .svelte-flow__controls-button:last-child {
+	border-bottom: none;
+}
+
+.svelte-flow .svelte-flow__minimap {
+	border: var(--border-hairline);
+	border-radius: var(--radius-md);
+	overflow: hidden;
+}
+
+.svelte-flow .svelte-flow__attribution {
+	font-size: 9px;
+	border: var(--border-hairline);
+	border-right: none;
+	border-bottom: none;
+	border-radius: var(--radius-sm) 0 0 0;
+}
+
+.svelte-flow .svelte-flow__attribution a {
+	color: var(--color-ink-muted);
+}

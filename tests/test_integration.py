@@ -152,6 +152,30 @@ class TestCLIArgumentParsing:
                 "--chunk-overlap", "100",
             ])
 
+    def test_parse_args_docs_defaults_off(self, test_repo):
+        """--docs is opt-in; its sub-flags still have usable defaults."""
+        args = parse_args(["--repo-path", test_repo])
+        assert args.docs is False
+        assert args.docs_bundle_dir
+        assert args.docs_model
+        assert args.docs_language
+        assert args.docs_force is False
+        assert args.docs_dry_run is False
+
+    def test_parse_args_docs_rejects_no_graph(self, test_repo):
+        """--docs needs the code graph for IMPLEMENTED_BY edges."""
+        with pytest.raises(SystemExit):
+            parse_args(["--repo-path", test_repo, "--docs", "--no-graph"])
+
+    def test_parse_args_docs_rejects_dry_run(self, test_repo):
+        """--docs needs a real index run (code nodes must actually be written)."""
+        with pytest.raises(SystemExit):
+            parse_args(["--repo-path", test_repo, "--docs", "--dry-run"])
+
+    def test_parse_args_docs_alone_is_accepted(self, test_repo):
+        args = parse_args(["--repo-path", test_repo, "--docs"])
+        assert args.docs is True
+
 
 class TestHealthChecks:
     def test_check_qdrant_health_success(self):

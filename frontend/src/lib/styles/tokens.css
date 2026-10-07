@@ -1,0 +1,203 @@
+/*
+ * Design tokens — Notion-style system (see the pasted design spec in the
+ * "ubah design" request). Purple primary CTA, pastel card tints, rounded
+ * geometry (8px buttons / 12px cards), soft hairline borders, Notion Sans
+ * stack. Replaces the previous "Dell 1996 catalog" identity in full.
+ *
+ * Component files keep referencing the SAME variable names the old system
+ * used (--tint-*, --color-ink, --color-frame-ink, --border-hairline,
+ * --space-*, --radius-*, ...) wherever the name still describes the right
+ * concept — only the *values* changed. Where a name's old meaning doesn't
+ * map cleanly (e.g. --color-frame-ink used to mean "the ink used to invert
+ * chrome to black", now split from border color), new tokens were added
+ * instead of overloading the old one; see --color-ink-deep below.
+ */
+
+:root {
+	/* ---- Brand & primary CTA ---------------------------------------------- */
+	--color-primary: #5645d4;
+	--color-primary-pressed: #4534b3;
+	--color-primary-deep: #3a2a99;
+	--color-on-primary: #ffffff;
+
+	/* True black — reserved for the rare "invert to ink" surface (segmented
+	   tab active state, skip-link), never the default border or text color. */
+	--color-ink-deep: #000000;
+
+	/* Inline text links — deliberately distinct from --color-primary so a
+	   link and a CTA never compete for the same visual slot. */
+	--color-link: #0075de;
+	--color-link-pressed: #005bab;
+
+	/* Legacy names kept for compatibility with the sticker/stripe call sites
+	   that predate this pass — now pointed at Notion-family colors instead of
+	   inventing new ones inline. */
+	--color-yellow-sticker: #fef7d6;
+	--color-purple-stripe: #7b3ff2;
+
+	/* ---- Semantic ---------------------------------------------------------*/
+	--color-danger: #e03131;
+	--color-warning: #dd5b00;
+	--color-success: #1aae39;
+
+	/* ---- Surface ----------------------------------------------------------*/
+	--color-canvas: #ffffff;
+	--color-surface: #f6f5f4;
+	--color-surface-soft: #fafaf9;
+
+	/* ---- Text -------------------------------------------------------------*/
+	--color-ink: #1a1a1a;
+
+	/* ---- Hairline borders -------------------------------------------------*/
+	--color-hairline: #e5e3df;
+	--color-hairline-soft: #ede9e4;
+	--color-hairline-strong: #c8c4be;
+	/* Legacy alias: anywhere still reading var(--color-frame-ink) directly
+	   (a literal 1px border, not the --border-hairline utility) resolves to
+	   the stronger hairline tone rather than pure black. */
+	--color-frame-ink: var(--color-hairline-strong);
+
+	/* ---- Ribbon-card tint family (closed, 8 colors) -----------------------
+	   Mapped 1:1 onto Notion's pastel card-tint palette. Names kept from the
+	   previous system (~15 call sites key off them by name), values swapped. */
+	--tint-olive: #fef7d6; /* -> card-tint-yellow */
+	--tint-sage: #f8f5e8; /* -> card-tint-cream */
+	--tint-salmon: #fde0ec; /* -> card-tint-rose */
+	--tint-peach: #ffe8d4; /* -> card-tint-peach */
+	--tint-lime: #d9f3e1; /* -> card-tint-mint */
+	--tint-sky: #dcecfa; /* -> card-tint-sky */
+	--tint-steel: #f0eeec; /* -> card-tint-gray */
+	--tint-periwinkle: #e6e0f5; /* -> card-tint-lavender */
+
+	/* ---- Derived neutrals ------------------------------------------------ */
+	--color-ink-muted: color-mix(in oklab, var(--color-ink) 68%, var(--color-canvas));
+	--color-ink-faint: color-mix(in oklab, var(--color-ink) 45%, var(--color-canvas));
+	--color-on-ink-muted: color-mix(in oklab, var(--color-canvas) 60%, var(--color-ink-deep));
+	--color-skeleton: color-mix(in oklab, var(--color-canvas) 82%, var(--color-ink));
+	--color-row-zebra: color-mix(in oklab, var(--color-canvas) 96%, var(--color-ink));
+	--color-row-hover: color-mix(in oklab, var(--color-canvas) 91%, var(--color-ink));
+	/* Chrome background — the surface the page sits on, behind cards/panels. */
+	--color-page-backdrop: var(--color-surface);
+
+	/* ---- Derived tint hover states -----------------------------------------
+	   Pastels are already very light, so hover pushes gently toward ink
+	   instead of the old 88/12 "lit up" ratio, which would have muddied them. */
+	--tint-olive-hover: color-mix(in oklab, var(--tint-olive) 92%, var(--color-ink));
+	--tint-sage-hover: color-mix(in oklab, var(--tint-sage) 92%, var(--color-ink));
+	--tint-salmon-hover: color-mix(in oklab, var(--tint-salmon) 92%, var(--color-ink));
+	--tint-peach-hover: color-mix(in oklab, var(--tint-peach) 92%, var(--color-ink));
+	--tint-lime-hover: color-mix(in oklab, var(--tint-lime) 92%, var(--color-ink));
+	--tint-sky-hover: color-mix(in oklab, var(--tint-sky) 92%, var(--color-ink));
+	--tint-steel-hover: color-mix(in oklab, var(--tint-steel) 92%, var(--color-ink));
+	--tint-periwinkle-hover: color-mix(in oklab, var(--tint-periwinkle) 92%, var(--color-ink));
+
+	/* ---- Typography --------------------------------------------------------
+	   Notion Sans is Notion's private Inter-based face; Inter is its
+	   documented public fallback, so that's the honest substitute here —
+	   loaded from the system/user font cache, no bundled font files. */
+	--font-display:
+		'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, system-ui,
+		sans-serif;
+	--font-heading: var(--font-display);
+	--font-body: var(--font-display);
+	--font-mono:
+		ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+
+	--type-display-size: clamp(28px, 4.5vw, 44px);
+	--type-display-weight: 600;
+	--type-display-lh: 1.1;
+	--type-display-tracking: -0.02em;
+
+	--type-h1-size: clamp(22px, 2.6vw, 30px);
+	--type-h1-weight: 600;
+	--type-h1-lh: 1.15;
+
+	--type-brand-size: clamp(16px, 2vw, 20px);
+
+	--type-h2-size: 20px;
+	--type-h2-weight: 600;
+	--type-h2-lh: 1.25;
+
+	--type-h3-size: 16px;
+	--type-h3-weight: 600;
+	--type-h3-lh: 1.3;
+
+	--type-body-size: 15px;
+	--type-body-weight: 400;
+	--type-body-lh: 1.55;
+
+	--type-body-sm-size: 13px;
+	--type-body-sm-lh: 1.5;
+
+	--type-caption-size: 12px;
+	--type-caption-lh: 1.4;
+
+	--type-button-size: 14px;
+	--type-button-weight: 500;
+
+	--type-ui-label-size: 11px;
+	--type-ui-label-weight: 600;
+
+	/* Comfortable reading measure for prose (markdown, wiki, chat answers). */
+	--measure: 68ch;
+
+	/* ---- Spacing (4px base, 2/6/10 intermediates) -------------------------*/
+	--space-xxs: 4px;
+	--space-xs: 8px;
+	--space-s: 8px;
+	--space-sm: 8px;
+	--space-m: 10px;
+	--space-md: 12px;
+	--space-lg: 16px;
+	--space-xl: 20px;
+	--space-xxl: 24px;
+	--space-section-sm: 32px;
+	--space-section: 48px;
+	--space-section-lg: 64px;
+
+	/* ---- Radius ------------------------------------------------------------*/
+	--radius-none: 0px;
+	--radius-xs: 4px;
+	--radius-sm: 6px;
+	--radius-md: 8px;
+	--radius-lg: 12px;
+	--radius-xl: 16px;
+	--radius-full: 9999px;
+
+	/* ---- Borders / elevation -----------------------------------------------
+	   Soft, tinted shadows replace the old hard 2px-offset bevel. */
+	--border-hairline: 1px solid var(--color-hairline);
+	--border-hairline-strong: 2px solid var(--color-hairline-strong);
+	--frame-width: 0px;
+	--frame-width-tablet: 0px;
+	--frame-width-mobile: 0px;
+	--shadow-subtle: 0px 1px 2px 0px rgba(15, 15, 15, 0.04);
+	--shadow-card: 0px 4px 12px 0px rgba(15, 15, 15, 0.08);
+	--shadow-lifted: 0px 24px 48px -8px rgba(15, 15, 15, 0.2);
+	--shadow-modal: 0px 16px 48px -8px rgba(15, 15, 15, 0.16);
+	/* Legacy alias — components that used to draw a hard 2px bevel now lift
+	   softly instead. */
+	--bevel-hard: var(--shadow-card);
+
+	/* ---- Focus --------------------------------------------------------------*/
+	--focus-ring-width: 2px;
+	--focus-ring-color: var(--color-primary);
+	--focus-offset: 2px;
+
+	/* ---- Motion ---------------------------------------------------------- */
+	--motion-fast: 120ms;
+	--motion-base: 180ms;
+	--motion-slow: 260ms;
+	--ease-snap: cubic-bezier(0.16, 1, 0.3, 1);
+
+	/* ---- Touch ------------------------------------------------------------- */
+	--touch-min: 44px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	:root {
+		--motion-fast: 1ms;
+		--motion-base: 1ms;
+		--motion-slow: 1ms;
+	}
+}

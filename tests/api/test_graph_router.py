@@ -82,3 +82,77 @@ def test_cypher_endpoint_rejects_write(client):
 
 def test_browse_nodes_unknown_label(client):
     assert client.get("/api/graph/nodes", params={"label": "Nope"}).status_code == 422
+
+
+def test_edges_among_filters_to_visible_ids_and_dedupes(client, fake_graph):
+    # Bare nodes, as the driver returns them when only `r` is in the RETURN:
+    # element ids only, no `id` property. The endpoint must use from_id/to_id.
+    a = FakeNode({}, labels=["Function"], element_id="4:x:1")
+    b = FakeNode({}, labels=["Function"], element_id="4:x:2")
+    rel = FakeRel(a, b, "CALLS", element_id="5:x:1")
+    fake_graph.queue([
+        {"r": rel, "from_id": "a", "to_id": "b"},
+        {"r": rel, "from_id": "a", "to_id": "b"},
+        {"r": None},
+    ])
+
+    resp = client.post("/api/graph/edges", json={"ids": ["b", "a", "", "a"]})
+    assert resp.status_code == 200, resp.text
+
+    cypher, params = fake_graph.calls[-1]
+    assert "a.id IN $ids AND b.id IN $ids" in cypher
+    assert "MATCH (a)-[r]->(b)" in cypher
+    assert "a.id AS from_id, b.id AS to_id" in cypher
+    assert params == {"ids": ["a", "b"], "limit": 500}
+    assert resp.json() == {"edges": [{"id": "5:x:1", "from": "a", "to": "b", "type": "CALLS"}]}
+
+
+def test_edges_among_short_circuits_on_empty_ids(client, fake_graph):
+    resp = client.post("/api/graph/edges", json={"ids": []})
+    assert resp.status_code == 200
+    assert resp.json() == {"edges": []}
+    assert fake_graph.calls == []
+
+
+def test_edges_among_rejects_more_than_200_ids(client):
+    resp = client.post("/api/graph/edges", json={"ids": [f"n{i}" for i in range(201)]})
+    assert resp.status_code == 422
+
+
+def test_cypher_relationship_cells_carry_endpoint_ids(client, monkeypatch, fake_graph):
+    """The Visualize button needs start/end ids on relationship cells."""
+    a = FakeNode({"id": "a", "name": "A"}, labels=["Function"])
+    b = FakeNode({}, labels=["Chunk"], element_id="4:x:9")  # no id prop -> element id
+    class MapRel(FakeRel, dict):
+        """Real neo4j Relationships are Mappings of their properties; FakeRel is not."""
+
+    rel = MapRel(a, b, "DOCUMENTS", element_id="5:x:7")
+
+    class Rec(dict):
+        def keys(self):
+            return list(super().keys())
+
+    class Session:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def execute_read(self, fn):
+            return [Rec(n=a, r=rel, m=b)]
+
+    class Driver:
+        def session(self, **kw):
+            assert kw.get("default_access_mode") == "READ"
+            return Session()
+
+    monkeypatch.setattr(type(fake_graph), "driver", property(lambda self: Driver()), raising=False)
+
+    resp = client.post("/api/graph/cypher", json={"cypher": "MATCH (n)-[r]->(m) RETURN n, r, m"})
+    assert resp.status_code == 200, resp.text
+    row = resp.json()["rows"][0]
+    assert row["r"]["_type"] == "relationship"
+    assert row["r"]["start_node_id"] == "a"
+    assert row["r"]["end_node_id"] == "4:x:9"
+    assert row["m"]["_element_id"] == "4:x:9"

@@ -1,26 +1,35 @@
-"""DeepSeek enrichment agent — writes plain-language wiki content per concept.
+"""LLM enrichment agent — writes plain-language wiki content per concept.
 
 The agent walks the skeleton bottom-up (leaf functions/methods -> classes ->
-files), reads each concept's source plus its grounded neighbors, and asks
-DeepSeek for a structured JSON page (summary, overview, how-it-works, params,
+files), reads each concept's source plus its grounded neighbors, and asks the
+model for a structured JSON page (summary, overview, how-it-works, params,
 tags, related). Higher-level concepts receive their children's one-line
 summaries so their pages stay coherent (the DeepWiki pattern).
 
-DeepSeek is OpenAI-compatible, so the `openai` SDK (already a dependency) is
-pointed at the DeepSeek base URL. Structured output uses JSON mode
+Two providers are supported, selected by ``OKF_LLM_PROVIDER`` (see config.py):
+
+- ``deepseek`` — the DeepSeek cloud API (default).
+- ``omlx``     — a local oMLX server (or any OpenAI-compatible local endpoint)
+  running e.g. Gemma/Qwen fully offline.
+
+Both are OpenAI-compatible, so the `openai` SDK (already a dependency) is
+pointed at the provider's base URL. Structured output uses JSON mode
 (`response_format={"type": "json_object"}`) with the schema described in the
-system prompt, validated/repaired in Python.
+system prompt, validated/repaired in Python. Small local models occasionally
+wrap the JSON in a Markdown code fence, which `_parse_json_reply` tolerates.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Callable, Optional
 
+from code_vector_graph.config import okf_llm_settings
 from code_vector_graph.ingestion.okf import cache as okf_cache
 from code_vector_graph.ingestion.okf.skeleton import Skeleton, concept_name
 
@@ -62,16 +71,61 @@ SYSTEM_PROMPT = (
 )
 
 
-def make_client(api_key: str, base_url: str):
-    """Construct an OpenAI-SDK client pointed at DeepSeek."""
+def make_client(api_key: Optional[str] = None, base_url: Optional[str] = None,
+                provider: Optional[str] = None, *, probe: Optional[bool] = None):
+    """Construct an OpenAI-SDK client for the configured enrichment provider.
+
+    With no arguments everything is resolved from the environment via
+    ``okf_llm_settings()`` (``OKF_LLM_PROVIDER`` = deepseek | omlx). Explicit
+    ``api_key``/``base_url`` override the resolved values.
+
+    For a local provider (oMLX) the server is probed once (``GET /v1/models``)
+    so a stopped server or a wrong key fails fast with a clear message instead
+    of every concept silently falling back to a metadata-only page. Pass
+    ``probe=False`` to skip that (e.g. from the dashboard API startup).
+
+    Raises ``ValueError`` with an actionable message when misconfigured.
+    """
     from openai import OpenAI  # imported lazily so tests can run without the dep loaded
 
+    s = okf_llm_settings()
+    provider = provider or s.provider
+    api_key = api_key if api_key is not None else s.api_key
+    base_url = base_url or s.base_url
+    local = provider == "omlx"
+
     if not api_key:
-        raise ValueError(
-            "DEEPSEEK_API_KEY is not set. Add it to your environment or .env "
-            "(see .env.example)."
-        )
-    return OpenAI(api_key=api_key, base_url=base_url)
+        if local:
+            # oMLX can run with API-key verification disabled; the SDK still
+            # needs a non-empty string. If the server does require a key the
+            # probe below reports it.
+            api_key = "omlx"
+        else:
+            raise ValueError(
+                f"{s.key_env} is not set. Add it to your environment or .env "
+                "(see .env.example), or set OKF_LLM_PROVIDER=omlx to use a local oMLX server."
+            )
+
+    client = OpenAI(api_key=api_key, base_url=base_url)
+
+    do_probe = local if probe is None else probe
+    if do_probe:
+        try:
+            models = [m.id for m in client.models.list().data]
+        except Exception as exc:  # noqa: BLE001 — surface *any* connection/auth problem
+            status = getattr(exc, "status_code", None)
+            hint = (
+                f"{s.key_env} is missing or wrong (server returned 401)" if status == 401
+                else f"is the server running at {base_url}? ({type(exc).__name__}: {exc})"
+            )
+            raise ValueError(f"Cannot reach the {provider} server: {hint}") from exc
+        for wanted in {s.model_flash, s.model_pro}:
+            if models and wanted not in models:
+                raise ValueError(
+                    f"Model '{wanted}' is not served by {provider} at {base_url}. "
+                    f"Available: {', '.join(models)}. Set OMLX_MODEL / OKF_MODEL_FLASH / OKF_MODEL_PRO."
+                )
+    return client
 
 
 def _read_source_slice(node: dict, max_chars: int = MAX_SOURCE_CHARS) -> str:
@@ -198,8 +252,72 @@ def fallback_enrichment(node: dict) -> dict:
     }
 
 
-def _call_deepseek(client, model: str, system: str, user: str) -> dict:
-    """One DeepSeek chat completion in JSON mode, parsed. Raises on failure."""
+_FENCE_RE = re.compile(r"^\s*```(?:json|JSON)?\s*\n?(.*?)\n?\s*```\s*$", re.DOTALL)
+
+
+def _parse_json_reply(content: str) -> dict:
+    """Parse the model's JSON reply, tolerating a Markdown code fence or
+    stray prose around the object (common with small local models).
+
+    Raises ``json.JSONDecodeError`` if no JSON object can be recovered.
+    """
+    text = (content or "").strip()
+    if not text:
+        raise json.JSONDecodeError("Empty reply", content or "", 0)
+    m = _FENCE_RE.match(text)
+    if m:
+        text = m.group(1).strip()
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        start, end = text.find("{"), text.rfind("}")
+        if start == -1 or end <= start:
+            raise
+        parsed = json.loads(text[start:end + 1])
+    if not isinstance(parsed, dict):
+        raise json.JSONDecodeError("Reply is not a JSON object", text, 0)
+    return parsed
+
+
+def _provider_extra_body(provider: str, *, thinking: bool) -> dict:
+    """Provider-specific request fields controlling reasoning/thinking mode."""
+    if provider == "omlx":
+        # oMLX forwards `chat_template_kwargs` to the model's chat template;
+        # `enable_thinking` is honoured by Qwen3-style templates and ignored by
+        # models without a thinking mode (Gemma).
+        return {"chat_template_kwargs": {"enable_thinking": thinking}}
+    return {"thinking": {"type": "enabled" if thinking else "disabled"}}
+
+
+def _call_llm(
+    client,
+    model: str,
+    system: str,
+    user: str,
+    max_tokens: int = _MAX_TOKENS,
+    *,
+    thinking: bool = False,
+    reasoning_effort: Optional[str] = None,
+    provider: Optional[str] = None,
+) -> dict:
+    """One chat completion in JSON mode, parsed. Raises on failure.
+
+    ``provider`` defaults to ``OKF_LLM_PROVIDER`` and only changes the
+    provider-specific ``extra_body`` (see `_provider_extra_body`).
+
+    Thinking mode is **disabled by default**: DeepSeek V4 models think by
+    default (effort "high"), and the reasoning tokens count against
+    `max_tokens`. With the tight budgets used here (1.5k-8k) the model spent
+    ~90% of the budget thinking and the JSON answer came back truncated
+    (`finish_reason="length"`), which every caller then treated as a failure
+    and silently replaced with a structural fallback. The same applies to local
+    thinking models (Qwen3) behind oMLX. Pass `thinking=True` (optionally with
+    `reasoning_effort="low"|"high"|"max"`, DeepSeek only) to opt back in.
+    """
+    provider = provider or okf_llm_settings().provider
+    kwargs: dict = {}
+    if thinking and reasoning_effort and provider == "deepseek":
+        kwargs["reasoning_effort"] = reasoning_effort
     resp = client.chat.completions.create(
         model=model,
         messages=[
@@ -207,11 +325,24 @@ def _call_deepseek(client, model: str, system: str, user: str) -> dict:
             {"role": "user", "content": user},
         ],
         response_format={"type": "json_object"},
-        max_tokens=_MAX_TOKENS,
+        max_tokens=max_tokens,
         stream=False,
+        extra_body=_provider_extra_body(provider, thinking=thinking),
+        **kwargs,
     )
-    content = resp.choices[0].message.content or "{}"
-    return json.loads(content)
+    choice = resp.choices[0]
+    content = choice.message.content or "{}"
+    if getattr(choice, "finish_reason", None) == "length":
+        # Surface truncation as a parse-class error so callers' retry paths
+        # see a clear reason instead of a bare "Unterminated string".
+        raise json.JSONDecodeError(
+            f"{provider} reply truncated at max_tokens={max_tokens} (finish_reason=length)", content, len(content)
+        )
+    return _parse_json_reply(content)
+
+
+# Backwards-compatible name (the function is provider-agnostic now).
+_call_deepseek = _call_llm
 
 
 def enrich_concept(client, model: str, node: dict, context: str, source: str) -> dict:
@@ -224,7 +355,7 @@ def enrich_concept(client, model: str, node: dict, context: str, source: str) ->
     last_exc: Optional[Exception] = None
     for attempt in range(_RETRIES):
         try:
-            raw = _call_deepseek(client, model, SYSTEM_PROMPT, user)
+            raw = _call_llm(client, model, SYSTEM_PROMPT, user)
             return _coerce_enrichment(raw)
         except json.JSONDecodeError as exc:
             last_exc = exc
@@ -326,7 +457,7 @@ def _enrich_overview(skeleton: Skeleton, enrichments: dict[str, dict], client, m
         "overview explaining what the system does and how the main pieces fit together."
     )
     try:
-        raw = _call_deepseek(client, model_pro, SYSTEM_PROMPT, user)
+        raw = _call_llm(client, model_pro, SYSTEM_PROMPT, user)
         return _coerce_enrichment(raw)
     except Exception as exc:  # noqa: BLE001
         logger.warning("Overview enrichment failed (%s); using minimal overview: %s", model_pro, exc)

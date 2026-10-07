@@ -204,14 +204,18 @@ class AppScope:
         return clause, {"repos": self.repo_names, "roots": self.root_prefixes}
 
     def cypher_wiki_where(self, alias: str = "w") -> tuple[str, dict[str, Any]]:
-        """WikiPage in scope: recorded ``repo`` or DOCUMENTS a node under a scoped File."""
+        """WikiPage in scope: recorded ``repo``, DOCUMENTS a node under a scoped
+        File, or an app-level Document (``repo IS NULL``) for this app."""
         fwhere, params = self.cypher_file_where("f")
         dwhere, _ = self.cypher_file_where("d")
+        params = dict(params)
+        params["app"] = self.app
         clause = (
             f"({alias}.repo IN $repos OR EXISTS {{ "
             f"MATCH ({alias})-[:DOCUMENTS]->(d) "
             f"WHERE (d:File AND {dwhere}) "
-            f"OR EXISTS {{ MATCH (d)<-[:CONTAINS|DEFINES]-(f:File) WHERE {fwhere} }} }})"
+            f"OR EXISTS {{ MATCH (d)<-[:CONTAINS|DEFINES]-(f:File) WHERE {fwhere} }} }} "
+            f"OR ({alias}.type = 'Document' AND {alias}.app = $app AND {alias}.repo IS NULL))"
         )
         return clause, params
 

@@ -71,6 +71,8 @@ class FakeGraph:
         self.calls: list[tuple[str, dict]] = []
         self.script: list[list] = []
         self.healthy = True
+        self.upserted_nodes: list[list[dict]] = []
+        self.upserted_rels: list[list[dict]] = []
 
     def queue(self, records: list):
         self.script.append(records)
@@ -83,6 +85,17 @@ class FakeGraph:
 
     def check_health(self):
         return self.healthy
+
+    def create_constraints(self):
+        return None
+
+    def upsert_nodes(self, nodes):
+        self.upserted_nodes.append(list(nodes))
+        return {"nodes_created": len(nodes)}
+
+    def upsert_relationships(self, rels, node_labels=None):
+        self.upserted_rels.append(list(rels))
+        return {"relationships_created": len(rels)}
 
     @property
     def last_cypher(self) -> str:

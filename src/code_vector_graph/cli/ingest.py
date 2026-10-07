@@ -12,6 +12,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from code_vector_graph.config import (  # noqa: E402
+    CVG_DOCS_BUNDLE_DIR,
+    CVG_DOCS_LANGUAGE,
     DEFAULT_CHUNK_OVERLAP,
     DEFAULT_CHUNK_SIZE,
     DEFAULT_COLLECTION_NAME,
@@ -21,6 +23,7 @@ from code_vector_graph.config import (  # noqa: E402
     NEO4J_URI,
     NEO4J_USER,
     NEO4J_PASSWORD,
+    OKF_FEATURES_MODEL,
 )
 
 logger = logging.getLogger(__name__)
@@ -170,6 +173,50 @@ Examples:
     )
 
     parser.add_argument(
+        "--docs",
+        action="store_true",
+        help=(
+            "After a successful index, also generate feature-level (business-logic) "
+            "documentation for this repo (see `cvg-docs-build`). Requires the graph "
+            "(incompatible with --no-graph/--dry-run); a failure here logs a warning "
+            "and never fails the index."
+        ),
+    )
+
+    parser.add_argument(
+        "--docs-bundle-dir",
+        type=str,
+        default=CVG_DOCS_BUNDLE_DIR,
+        help=f"OKF bundle directory the feature docs export into (default: {CVG_DOCS_BUNDLE_DIR})",
+    )
+
+    parser.add_argument(
+        "--docs-model",
+        type=str,
+        default=OKF_FEATURES_MODEL,
+        help=f"Model for feature discovery + doc generation (default: {OKF_FEATURES_MODEL})",
+    )
+
+    parser.add_argument(
+        "--docs-language",
+        type=str,
+        default=CVG_DOCS_LANGUAGE,
+        help=f"Feature-doc prose language (default: {CVG_DOCS_LANGUAGE})",
+    )
+
+    parser.add_argument(
+        "--docs-force",
+        action="store_true",
+        help="Ignore the feature-doc cache; regenerate every LLM-authored feature",
+    )
+
+    parser.add_argument(
+        "--docs-dry-run",
+        action="store_true",
+        help="Feature docs: structural map + fallback pages; no LLM calls",
+    )
+
+    parser.add_argument(
         "--verbose",
         action="store_true",
         help="Print progress info",
@@ -200,7 +247,55 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
     if parsed.batch_size <= 0:
         parser.error(f"Batch size must be positive, got: {parsed.batch_size}")
 
+    if parsed.docs and parsed.no_graph:
+        parser.error("--docs requires the code graph (incompatible with --no-graph)")
+    if parsed.docs and parsed.dry_run:
+        parser.error("--docs requires a real index run (incompatible with --dry-run)")
+
     return parsed
+
+
+def _build_docs_hook(args):
+    """Closure passed as `run_pipeline`'s `after_index`: generates feature
+    docs for the just-indexed repo, reusing its already-loaded embedder and
+    open stores. Never raises — `run_pipeline` logs and continues either way,
+    but building the LLM client here first lets us fail fast with a clear
+    message instead of a buried warning."""
+    from code_vector_graph.ingestion.okf.enricher import make_client
+    from code_vector_graph.ingestion.okf.features import (
+        FeatureBuildDeps,
+        FeatureBuildRequest,
+        build_feature_docs,
+    )
+
+    client = None
+    if not args.docs_dry_run:
+        client = make_client()
+
+    def _hook(ctx) -> None:
+        if ctx.graph_store is None:
+            logger.warning("--docs skipped: Neo4j is unavailable for this run.")
+            return
+        req = FeatureBuildRequest(
+            repo_path=args.repo_path, app=ctx.repo.app, repo_name=ctx.repo.name, repo_id=ctx.repo.id,
+            bundle_dir=args.docs_bundle_dir, language=args.docs_language,
+            model_map=args.docs_model, model_doc=args.docs_model,
+            force=args.docs_force, dry_run=args.docs_dry_run,
+        )
+        deps = FeatureBuildDeps(
+            llm_client=client, graph_store=ctx.graph_store, vector_store=ctx.store,
+            embedder=ctx.embedder, tokenizer_name=ctx.tokenizer_name,
+        )
+        result = build_feature_docs(req, deps)
+        print(
+            f"\nFeature docs: {result.features} features "
+            f"({result.generated} generated, {result.cached} cached, {result.kept_human} kept human-authored, "
+            f"{result.stale} stale, {result.deleted} deleted)."
+        )
+        for w in result.warnings:
+            logger.warning("docs: %s", w)
+
+    return _hook
 
 
 def main() -> int:
@@ -218,7 +313,15 @@ def main() -> int:
 
         logger.debug(f"Arguments: {args}")
 
-        run_pipeline(args)
+        after_index = None
+        if args.docs:
+            try:
+                after_index = _build_docs_hook(args)
+            except ValueError as exc:
+                print(f"ERROR: {exc}", file=sys.stderr)
+                return 1
+
+        run_pipeline(args, after_index=after_index)
 
         return 0
 

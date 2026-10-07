@@ -110,6 +110,43 @@ def test_search_keeps_wiki_fields(client, fake_mcp):
     assert code["source"] == "code" and code["wiki_context"]["title"] == "AuthService"
 
 
+def test_search_tolerates_null_list_and_str_fields_on_a_wiki_hit(client, fake_mcp):
+    """Regression: wiki items from `search_code_json` send an explicit null for the
+    code-only list fields. A field default only fires on a *missing* key, so those
+    nulls used to raise a ValidationError and surface as a bare 500."""
+    fake_mcp.reply(
+        "search_code_json",
+        {
+            "results": [
+                {
+                    "id": "w1",
+                    "score": 0.01,
+                    "source": "wiki",
+                    "file_path": None,
+                    "language": None,
+                    "text_content": None,
+                    "imports": None,
+                    "exports": None,
+                    "symbols_defined": None,
+                    "call_sites": None,
+                    "repo": None,
+                    "app": None,
+                    "term": "handleLogin",
+                }
+            ]
+        },
+    )
+
+    resp = client.post("/api/search", json={"query": "login", "include_wiki": True})
+
+    assert resp.status_code == 200, resp.text
+    hit = resp.json()["results"][0]
+    assert hit["imports"] == hit["exports"] == hit["symbols_defined"] == hit["call_sites"] == []
+    assert hit["file_path"] == "" and hit["language"] == "" and hit["text_content"] == ""
+    # Genuinely optional fields keep their null rather than being coerced.
+    assert hit["repo"] is None and hit["app"] is None
+
+
 def test_search_503_when_mcp_down(client, fake_mcp):
     fake_mcp.is_alive = False
     assert client.post("/api/search", json={"query": "x"}).status_code == 503
