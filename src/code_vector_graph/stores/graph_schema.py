@@ -43,6 +43,10 @@ RELATIONSHIP_TYPES = frozenset([
     "DEPENDS_ON",
     "HAS_GLOSSARY",
     "DOCUMENTS",
+    # WikiPage {type:"Feature"} -> code node it documents (one edge per member).
+    "IMPLEMENTED_BY",
+    # WikiPage {type:"Document"} -> File it names in its body (auto-detected).
+    "MENTIONS",
 ])
 
 # Node property schemas keyed by label
@@ -185,6 +189,29 @@ NODE_PROPERTIES = {
         "repo": str | None,
         "app": str | None,
         "how_it_works": str | None,
+        # Feature-page fields (type == "Feature"). Absent on symbol/file/repo pages.
+        "slug": str | None,
+        "content": str | None,
+        "kind": str | None,
+        "members_hash": str | None,
+        "edited_members_hash": str | None,
+        "member_files": list[str],
+        "member_count": int | None,
+        "stale": bool | None,
+        "stale_since": str | None,
+        "generated_at": str | None,
+        "edited_at": str | None,
+        "model": str | None,
+        "language": str | None,
+        "draft": str | None,
+        "draft_generated_at": str | None,
+        "needs_reembed": bool | None,
+        # Document-page fields (type == "Document"). Absent on other page types.
+        "category": str | None,
+        "created_at": str | None,
+        "word_count": int | None,
+        "source_file": str | None,
+        "mentions": list[str],
     },
     "Application": {
         "name": str,
@@ -203,7 +230,14 @@ NODE_PROPERTIES = {
 OPTIONAL_NODE_PROPERTIES: dict[str, frozenset[str]] = {
     "File": frozenset({"app", "repo", "rel_path"}),
     "Chunk": frozenset({"repo"}),
-    "WikiPage": frozenset({"repo", "app", "how_it_works"}),
+    "WikiPage": frozenset({
+        "repo", "app", "how_it_works",
+        "slug", "content", "kind", "members_hash", "edited_members_hash",
+        "member_files", "member_count", "stale", "stale_since",
+        "generated_at", "edited_at", "model", "language",
+        "draft", "draft_generated_at", "needs_reembed",
+        "category", "created_at", "word_count", "source_file", "mentions",
+    }),
     "Repository": frozenset({"indexed_at", "app"}),
 }
 

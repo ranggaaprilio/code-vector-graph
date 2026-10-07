@@ -47,10 +47,14 @@ _SYMBOL_COUNT_KEYS = {
     "Import": "imports",
     "Field": "fields",
 }
-_WIKI_ORDER = "CASE w.type WHEN 'Repository' THEN 0 WHEN 'File' THEN 1 WHEN 'Class' THEN 2 ELSE 3 END"
+_WIKI_ORDER = (
+    "CASE w.type WHEN 'Feature' THEN 0 WHEN 'Document' THEN 1 WHEN 'Repository' THEN 2 "
+    "WHEN 'File' THEN 3 WHEN 'Class' THEN 4 ELSE 5 END"
+)
 _WIKI_LIST_RETURN = (
     "RETURN w.concept_id AS concept_id, w.title AS title, w.type AS type, "
-    "w.summary AS summary, w.repo AS repo, w.path AS path, w.resource AS resource"
+    "w.summary AS summary, w.repo AS repo, w.path AS path, w.resource AS resource, "
+    "w.source AS source, w.stale AS stale"
 )
 
 
@@ -121,6 +125,8 @@ def _wiki_row(rec) -> dict[str, Any]:
         "repo": record_get(rec, "repo"),
         "path": record_get(rec, "path"),
         "resource": record_get(rec, "resource"),
+        "source": record_get(rec, "source"),
+        "stale": bool(record_get(rec, "stale") or False),
     }
 
 

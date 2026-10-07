@@ -6,7 +6,7 @@
 - Docker & Docker Compose
 - HuggingFace token (for model access)
 - OpenAI API key (for RAG answers via `cvg-query` — optional)
-- DeepSeek API key (for the OKF LLM wiki via `cvg-okf-build` — optional)
+- An LLM for the OKF wiki via `cvg-okf-build` — optional: a DeepSeek API key, **or** a local [oMLX](https://github.com/jundot/omlx) server (`OKF_LLM_PROVIDER=omlx`)
 
 ## Step-by-Step Setup
 
@@ -46,6 +46,7 @@ EOF
 - **HF_TOKEN**: HuggingFace token with access to the embedding models. Get one at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens). Both models require `trust_remote_code=True`, so ensure your token has read access.
 - **OPENAI_API_KEY**: OpenAI API key for RAG answers via `cvg-query` (only needed for querying, not indexing).
 - **DEEPSEEK_API_KEY**: DeepSeek API key for the OKF LLM wiki via `cvg-okf-build` (only needed for wiki generation). Get one at [platform.deepseek.com](https://platform.deepseek.com/).
+- **OKF_LLM_PROVIDER=omlx** + **OMLX_API_KEY** / **OMLX_MODEL**: instead of DeepSeek, generate the wiki with a local oMLX server (Gemma, Qwen, … on Apple Silicon). See [docs/okf-wiki.md](okf-wiki.md#option-b--omlx-local-offline).
 
 ### 5. Start infrastructure services
 
@@ -110,6 +111,19 @@ cvg-mcp
 
 See the [MCP Server](#mcp-server) section for client configuration.
 
+### 10. (Optional) Build the web dashboard
+
+The dashboard's static assets are a build artifact and are not committed. Build
+them once (and again after any change under `frontend/`) before running
+`cvg-serve` or packaging a wheel:
+
+```bash
+cd frontend && npm install && npm run build && cd ..
+cvg-serve
+```
+
+See [dashboard.md](dashboard.md#frontend) for the frontend workflow.
+
 
 ## Quick Start Summary
 
@@ -143,8 +157,12 @@ cvg-query --question "How does auth work?" --retrieval hybrid
 # 8. Or start MCP server for AI client integration
 cvg-mcp
 
-# 9. (Optional) Build the OKF LLM wiki (needs DEEPSEEK_API_KEY) and sync it back
+# 9. (Optional) Build the OKF LLM wiki (needs DEEPSEEK_API_KEY, or OKF_LLM_PROVIDER=omlx) and sync it back
 cvg-okf-build --repo-path /path/to/repo --verbose
 cvg-okf-sync --bundle okf-wiki --verbose
+
+# 10. (Optional) Build and serve the web dashboard (static assets are not committed)
+(cd frontend && npm install && npm run build)
+cvg-serve
 ```
 

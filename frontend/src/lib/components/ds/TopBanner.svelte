@@ -14,7 +14,7 @@
 </script>
 
 <header class="top-banner">
-	<div class="brand">Code Vector Graph</div>
+	<div class="brand">Enigram</div>
 	<div class="statuses" role="status" aria-live="polite">
 		{#each statuses as s (s.label)}
 			<span class="status-item {stateOf(s.ok)}">

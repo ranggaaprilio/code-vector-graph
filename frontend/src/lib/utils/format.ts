@@ -5,8 +5,18 @@
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import hljs from './highlight';
+import mermaid from 'mermaid';
 
 marked.use({ gfm: true, breaks: true });
+
+let mermaidInitialized = false;
+let mermaidSeq = 0;
+
+function ensureMermaidInit(): void {
+	if (mermaidInitialized) return;
+	mermaid.initialize({ startOnLoad: false, theme: 'neutral', securityLevel: 'strict' });
+	mermaidInitialized = true;
+}
 
 /** Map an indexed `language` value (or wiki flag) to a highlight.js language id. */
 export function hljsLang(language: unknown, isWiki = false): string {
@@ -243,6 +253,32 @@ export function highlightWithin(rootEl: ParentNode | null | undefined): void {
 	rootEl.querySelectorAll('pre code:not(.hljs)').forEach((el) => {
 		hljs.highlightElement(el as HTMLElement);
 	});
+}
+
+/** Replace every not-yet-rendered ```mermaid fenced block under `rootEl` (marked
+ *  renders these as `<pre><code class="language-mermaid">`) with its rendered
+ *  SVG diagram. A block that fails to parse is left as plain code, marked so
+ *  it isn't retried on the next call. */
+export async function renderMermaidWithin(rootEl: ParentNode | null | undefined): Promise<void> {
+	if (!rootEl?.querySelectorAll) return;
+	const blocks = rootEl.querySelectorAll('pre code.language-mermaid:not(.mermaid-rendered)');
+	if (!blocks.length) return;
+	ensureMermaidInit();
+	for (const codeEl of Array.from(blocks)) {
+		const pre = codeEl.parentElement;
+		const source = codeEl.textContent || '';
+		codeEl.classList.add('mermaid-rendered');
+		if (!pre || !source.trim()) continue;
+		try {
+			const { svg } = await mermaid.render(`mermaid-${Date.now()}-${mermaidSeq++}`, source);
+			const container = document.createElement('div');
+			container.className = 'mermaid-diagram';
+			container.innerHTML = svg;
+			pre.replaceWith(container);
+		} catch (err) {
+			console.error('Mermaid render failed', err);
+		}
+	}
 }
 
 export async function copyToClipboard(text: string): Promise<boolean> {

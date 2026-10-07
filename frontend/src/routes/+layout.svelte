@@ -17,6 +17,7 @@
 		{ id: 'vectors', path: '/vectors', label: 'Vectors' },
 		{ id: 'graph', path: '/graph', label: 'Graph' },
 		{ id: 'chat', path: '/chat', label: 'AI Chat' },
+		{ id: 'editor', path: '/editor', label: 'Editor' },
 		{ id: 'overview', path: '/overview', label: 'System' }
 	];
 
@@ -112,7 +113,7 @@
 		</main>
 	</div>
 
-	<FooterBand>Code Vector Graph — Knowledge Dashboard</FooterBand>
+	<FooterBand>Enigram — Knowledge Dashboard</FooterBand>
 </PageFrame>
 
 <Toast message={appStore.toast} onDismiss={() => (appStore.toast = '')} />

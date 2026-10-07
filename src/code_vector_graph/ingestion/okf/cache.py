@@ -33,8 +33,8 @@ def concept_hash(node: dict) -> str:
     return hashlib.sha256("::".join(parts).encode("utf-8")).hexdigest()[:16]
 
 
-def load_cache(out_dir: str | Path) -> dict[str, dict]:
-    path = Path(out_dir) / CACHE_FILENAME
+def load_cache(out_dir: str | Path, filename: str = CACHE_FILENAME) -> dict[str, dict]:
+    path = Path(out_dir) / filename
     if not path.exists():
         return {}
     try:
@@ -46,8 +46,8 @@ def load_cache(out_dir: str | Path) -> dict[str, dict]:
         return {}
 
 
-def save_cache(out_dir: str | Path, cache: dict[str, dict]) -> None:
-    path = Path(out_dir) / CACHE_FILENAME
+def save_cache(out_dir: str | Path, cache: dict[str, dict], filename: str = CACHE_FILENAME) -> None:
+    path = Path(out_dir) / filename
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".json.tmp")
     with open(tmp, "w", encoding="utf-8") as f:

@@ -19,7 +19,7 @@ DEFAULT_COLLECTION_NAME = "code_chunks"
 # Base collection name the MCP server / dashboard read from by default (what
 # run_mac_mps_24gb.sh indexes into). The final Qdrant collection is derived from
 # it plus the model suffix via get_collection_name().
-DEFAULT_BASE_COLLECTION = "code_chunks_mac_mps_24gb"
+DEFAULT_BASE_COLLECTION = "code_chunks"
 
 # Qdrant endpoint — env-overridable (QDRANT_URL), defaults to the local docker-compose.
 QDRANT_URL = os.getenv("QDRANT_URL", DEFAULT_QDRANT_URL)
@@ -83,20 +83,69 @@ NEO4J_DATABASE = os.getenv("NEO4J_DATABASE", "neo4j")
 # Bound it low enough that "database is down" still degrades quickly.
 NEO4J_MAX_RETRY_TIME = float(os.getenv("NEO4J_MAX_RETRY_TIME", "5"))
 
-# DeepSeek configuration (OKF "LLM wiki" enrichment).
-# DeepSeek is OpenAI-compatible, so the `openai` SDK is pointed at this base URL.
+# --- OKF "LLM wiki" enrichment provider ---------------------------------------
+# OKF_LLM_PROVIDER selects which LLM writes the wiki/feature docs:
+#   "deepseek" (default) — DeepSeek cloud API (needs DEEPSEEK_API_KEY)
+#   "omlx"               — a local oMLX server (Apple Silicon, MLX) or any other
+#                          OpenAI-compatible local endpoint; models such as Gemma
+#                          or Qwen run fully offline. Needs OMLX_API_KEY unless the
+#                          server has API-key verification disabled.
+# Both speak the OpenAI chat-completions protocol, so the same `openai` SDK client
+# is used; only base URL, key, default models and a few request knobs differ.
+OKF_LLM_PROVIDERS = ("deepseek", "omlx")
+OKF_LLM_PROVIDER = os.getenv("OKF_LLM_PROVIDER", "deepseek").strip().lower() or "deepseek"
+if OKF_LLM_PROVIDER not in OKF_LLM_PROVIDERS:
+    raise ValueError(
+        f"Invalid OKF_LLM_PROVIDER '{OKF_LLM_PROVIDER}'. Available: {list(OKF_LLM_PROVIDERS)}"
+    )
+
+# DeepSeek configuration. DeepSeek is OpenAI-compatible, so the `openai` SDK is
+# pointed at this base URL.
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
 DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
 
+# oMLX configuration (local). The default port/path match `omlx serve`; the model
+# id is the directory name under ~/.omlx/models (see GET /v1/models).
+OMLX_API_KEY = os.getenv("OMLX_API_KEY", "")
+OMLX_BASE_URL = os.getenv("OMLX_BASE_URL", "http://localhost:8000/v1")
+OMLX_MODEL = os.getenv("OMLX_MODEL", "gemma-4-e2b-it-4bit")
+
 # Model tiers for OKF enrichment. `flash` is used for leaf/mid concept pages
 # (functions, methods, classes, files); `pro` for module/architecture overviews.
-# Note: the legacy `deepseek-chat`/`deepseek-reasoner` names are discontinued
-# 2026-07-24 — use the v4 names.
-OKF_MODEL_FLASH = os.getenv("OKF_MODEL_FLASH", "deepseek-v4-flash")
-OKF_MODEL_PRO = os.getenv("OKF_MODEL_PRO", "deepseek-v4-pro")
+# Defaults depend on the provider: DeepSeek v4 tiers (the legacy `deepseek-chat`/
+# `deepseek-reasoner` names are discontinued 2026-07-24), or the single local
+# OMLX_MODEL for both tiers.
+_OKF_DEFAULT_MODELS = {
+    "deepseek": ("deepseek-v4-flash", "deepseek-v4-pro"),
+    "omlx": (OMLX_MODEL, OMLX_MODEL),
+}
+OKF_MODEL_FLASH = os.getenv("OKF_MODEL_FLASH", _OKF_DEFAULT_MODELS[OKF_LLM_PROVIDER][0])
+OKF_MODEL_PRO = os.getenv("OKF_MODEL_PRO", _OKF_DEFAULT_MODELS[OKF_LLM_PROVIDER][1])
+
+# Concurrent enrichment requests. A cloud API happily takes 6; a local server
+# batches internally and has finite memory, so default lower there.
+_OKF_DEFAULT_CONCURRENCY = {"deepseek": 6, "omlx": 2}
+OKF_CONCURRENCY = int(
+    os.getenv("OKF_CONCURRENCY", "") or _OKF_DEFAULT_CONCURRENCY[OKF_LLM_PROVIDER]
+)
 
 # Default output directory for the generated OKF wiki bundle.
 OKF_OUT_DIR = os.getenv("OKF_OUT_DIR", "okf-wiki")
+
+# Feature-level docs (see ingestion/okf/features/). Written as WikiPage
+# {type:"Feature"} nodes on top of the same OKF bundle/pipeline.
+CVG_DOCS_LANGUAGE = os.getenv("CVG_DOCS_LANGUAGE", "en")
+OKF_FEATURES_MODEL = os.getenv("OKF_FEATURES_MODEL", OKF_MODEL_PRO)
+OKF_FEATURE_MAP_MAX_FILES = int(os.getenv("OKF_FEATURE_MAP_MAX_FILES", "250") or 250)
+OKF_FEATURE_MAP_MAX_CHARS = int(os.getenv("OKF_FEATURE_MAP_MAX_CHARS", "60000") or 60000)
+OKF_FEATURE_SOURCE_CHARS = int(os.getenv("OKF_FEATURE_SOURCE_CHARS", "24000") or 24000)
+OKF_MAX_FEATURES = int(os.getenv("OKF_MAX_FEATURES", "40") or 40)
+# "lazy" loads the embedding model in the API process on first save/regenerate
+# (needed to keep Qdrant in sync with an edited/regenerated Feature page);
+# "off" skips it entirely and marks affected pages `needs_reembed=true` instead
+# (safe fallback on memory-constrained hosts — see docs/feature-docs.md).
+CVG_API_EMBEDDER = os.getenv("CVG_API_EMBEDDER", "lazy")
+CVG_DOCS_BUNDLE_DIR = os.getenv("CVG_DOCS_BUNDLE_DIR", OKF_OUT_DIR)
 
 # Dashboard chat (LLM) settings. CVG_CHAT_PROVIDER selects "anthropic" | "openai" |
 # "deepseek"; empty means auto-detect from whichever API key is configured.
@@ -156,3 +205,48 @@ def get_model_config(model_id: str) -> dict:
     if model_id not in MODEL_CONFIGS:
         raise ValueError(f"Unknown model_id '{model_id}'. Available: {list(MODEL_CONFIGS.keys())}")
     return MODEL_CONFIGS[model_id]
+
+
+class OkfLLMSettings(dict):
+    """Resolved OKF enrichment LLM settings (dict with attribute access).
+
+    Keys: provider, api_key, base_url, key_env, model_flash, model_pro,
+    concurrency, local (bool — True for a self-hosted endpoint such as oMLX).
+    """
+
+    __getattr__ = dict.__getitem__
+
+
+def okf_llm_settings() -> OkfLLMSettings:
+    """Resolve the enrichment LLM (provider, key, base URL, models) from the env.
+
+    Read at call time — not from the import-time constants above — so the
+    dashboard API (which loads .env later) and tests that monkeypatch
+    ``os.environ`` see the current values.
+    """
+    provider = (os.getenv("OKF_LLM_PROVIDER", "deepseek").strip().lower() or "deepseek")
+    if provider not in OKF_LLM_PROVIDERS:
+        raise ValueError(
+            f"Invalid OKF_LLM_PROVIDER '{provider}'. Available: {list(OKF_LLM_PROVIDERS)}"
+        )
+    if provider == "omlx":
+        model = os.getenv("OMLX_MODEL", "gemma-4-e2b-it-4bit")
+        api_key = os.getenv("OMLX_API_KEY", "")
+        base_url = os.getenv("OMLX_BASE_URL", "http://localhost:8000/v1")
+        key_env = "OMLX_API_KEY"
+        default_flash, default_pro = model, model
+    else:
+        api_key = os.getenv("DEEPSEEK_API_KEY", "")
+        base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+        key_env = "DEEPSEEK_API_KEY"
+        default_flash, default_pro = _OKF_DEFAULT_MODELS["deepseek"]
+    return OkfLLMSettings(
+        provider=provider,
+        api_key=api_key,
+        base_url=base_url,
+        key_env=key_env,
+        model_flash=os.getenv("OKF_MODEL_FLASH", "") or default_flash,
+        model_pro=os.getenv("OKF_MODEL_PRO", "") or default_pro,
+        concurrency=int(os.getenv("OKF_CONCURRENCY", "") or _OKF_DEFAULT_CONCURRENCY[provider]),
+        local=provider == "omlx",
+    )

@@ -18,7 +18,7 @@ and an **MCP server** exposes the result to any AI client.
 - **Hybrid Retrieval**: Vector similarity fused with graph traversal via Reciprocal Rank Fusion (RRF)
 - **MCP Server**: `search_code`, `search_code_json` and `check_health` for any MCP-compatible client
 - **Web Dashboard**: Browse vectors, explore the graph, and chat with your codebase — routed through the same MCP tools a model uses
-- **OKF LLM Wiki**: Generate a cross-linked, human-readable wiki (Karpathy "LLM wiki" / DeepWiki style) in Google Cloud's **Open Knowledge Format** using **DeepSeek**, then sync it back into Qdrant and Neo4j
+- **OKF LLM Wiki**: Generate a cross-linked, human-readable wiki (Karpathy "LLM wiki" / DeepWiki style) in Google Cloud's **Open Knowledge Format** using **DeepSeek** or a **local oMLX model** (Gemma/Qwen, fully offline), then sync it back into Qdrant and Neo4j
 - **Deterministic IDs**: Content hashing makes upserts idempotent — re-running won't duplicate
 - **Dry-Run Mode**: Preview what would be processed without generating embeddings
 
@@ -32,7 +32,8 @@ and an **MCP server** exposes the result to any AI client.
 
 Python 3.10+, Docker & Docker Compose, and a HuggingFace token.
 An OpenAI key (RAG answers), Anthropic key (dashboard chat) and DeepSeek key
-(OKF wiki) are optional, per feature.
+(OKF wiki — or run it offline with a local oMLX model via `OKF_LLM_PROVIDER=omlx`)
+are optional, per feature.
 
 ## Quick Start
 
@@ -57,7 +58,7 @@ cvg-ingest --repo-path /path/to/js-or-ts-repo --verbose
 cvg-query --question "How does authentication work?" --retrieval hybrid
 
 # 7. Or open the dashboard / serve over MCP
-cvg-serve            # http://127.0.0.1:8000
+cvg-serve            # http://127.0.0.1:8001
 cvg-mcp              # stdio MCP server
 ```
 

@@ -6,7 +6,7 @@ and chat both go through the same MCP server an AI client would use, so what you
 see in the browser is what a model sees.
 
 ```bash
-cvg-serve                              # http://127.0.0.1:8000
+cvg-serve                              # http://127.0.0.1:8001
 cvg-serve --host 0.0.0.0 --port 9000   # bind elsewhere
 cvg-serve --reload                     # auto-reload during development
 ```
@@ -48,10 +48,11 @@ run `cvg-backfill-repo` (see [ingestion](ingestion.md)).
 | View | What it does |
 |---|---|
 | Applications | Cards per application: repos, file/chunk counts, language mix |
-| Application page | Overview (architecture prose or fallback stats), Files (tree → file → symbols, chunks, wiki), Wiki (OKF pages) |
+| Application page | Overview (architecture prose or fallback stats), Files (tree → file → symbols, chunks, wiki), Docs (Feature pages + manually-authored Documents — create, edit, reindex, delete, all with a live indexing-progress panel), Wiki (OKF pages) |
 | Vectors | Semantic search and raw payload browse, scoped, with code/wiki badges |
 | Graph | Svelte Flow (@xyflow/svelte) rendering of the Neo4j ontology with ELK layered layout; read-only Cypher |
 | Chat | An LLM answers questions, calling `search_code_json` scoped to the active application |
+| Editor | Standalone Markdown editor (toolbar, split preview, drag-drop/Open/Download a `.md` file, browser-local autosave draft) with a "Save to Docs…" panel that creates an indexed Document for any application |
 | System | Health of Qdrant, Neo4j and the MCP session; collection and graph stats |
 
 The Overview tab shows the OKF architecture overview when one exists. If it does
@@ -75,6 +76,13 @@ All endpoints are under `/api`, and the OpenAPI docs are at `/docs`.
 | `GET /api/apps/{app}/files/{repo}/{path}` | One file: symbols, code chunks, wiki pages, glossary |
 | `GET /api/apps/{app}/wiki` | OKF pages in scope (`?repo=&type=&q=&limit=&offset=`) |
 | `GET /api/apps/{app}/wiki/{concept_id}` | One page with what it documents and its cross-references |
+| `GET /api/apps/{app}/docs` | Feature/Document pages in scope (`?repo=&q=&stale=&source=&kind=&type=Feature\|Document\|all&limit=&offset=`) |
+| `POST /api/apps/{app}/docs` | Create a manually-authored Document (`{title?, markdown, repo?, tags?, category?, source_file?}`) — `202`, returns a `job_id` (see [Manual documents](okf-wiki.md#manual-documents)) |
+| `GET /api/apps/{app}/docs/{id}` | One page: content, `members` (Feature) or `mentions` (Document), and its latest indexing `job` if any |
+| `PUT /api/apps/{app}/docs/{id}` | Edit a page's Markdown; a Document edit re-indexes asynchronously and also returns a `job_id` |
+| `POST /api/apps/{app}/docs/{id}/reindex` | Re-embed a page's vectors and (for a Document) re-link its `MENTIONS` edges — `202` |
+| `DELETE /api/apps/{app}/docs/{id}` | Delete a Document (Feature pages are managed by "Generate docs" and can't be deleted here) |
+| `GET /api/apps/{app}/docs/jobs[/{job_id}]` | Background job status: `kind` (`generate`\|`index_document`), `stage`, `stages`, `progress`, `message`, `result` |
 | `GET /api/qdrant/collections` | List Qdrant collections |
 | `GET /api/qdrant/collection` | Point count, vector size, distance metric |
 | `GET /api/qdrant/points` | Paginated point browse (`?app=&repo=&source=&file_prefix=&language=`) |
@@ -149,11 +157,13 @@ straight into `src/code_vector_graph/api/static/`, which ships as package data,
 so the dashboard works from an installed wheel and not just a source checkout.
 `api/app.py` serves that directory through a single catch-all route registered
 after the `/api/*` routers, so client-side deep links survive a hard refresh.
+The `static/` directory is gitignored: run `npm run build` after cloning and
+before building a wheel, otherwise `cvg-serve` has no UI to serve.
 
 ```
 cd frontend
 npm install
-npm run dev     # Vite on :5173, /api proxied to 127.0.0.1:8000 (run cvg-serve too)
+npm run dev     # Vite on :5173, /api proxied to 127.0.0.1:8001 (run cvg-serve too)
 npm run build   # -> ../src/code_vector_graph/api/static/
 npm run check   # svelte-check (strict)
 npm run test    # vitest — the frontend unit suite

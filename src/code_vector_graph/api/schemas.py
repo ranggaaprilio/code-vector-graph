@@ -135,3 +135,77 @@ class EdgesRequest(BaseModel):
 
     ids: list[str] = Field(..., max_length=200, description="Node `id` properties currently on the canvas")
     limit: int = Field(default=500, ge=1, le=2000)
+
+
+# --- Feature docs (ingestion/okf/features) ---
+
+class MarkdownValidateRequest(BaseModel):
+    markdown: str
+    title: str | None = None
+    type: str = Field(default="Feature", pattern="^(Feature|Document)$")
+
+
+class ValidationIssueOut(BaseModel):
+    code: str
+    message: str
+    line: int | None = None
+
+
+class ValidationResultOut(BaseModel):
+    ok: bool
+    errors: list[ValidationIssueOut] = Field(default_factory=list)
+    warnings: list[ValidationIssueOut] = Field(default_factory=list)
+
+
+class FeatureDocUpdate(BaseModel):
+    """Body for PUT /apps/{app}/docs/{feature_id} — a human edit or an applied AI draft
+    (Feature page), or an edit to a manually-authored Document page."""
+
+    markdown: str
+    tags: list[str] | None = None
+    source: str = Field(default="human", pattern="^(human|llm)$")
+    category: str | None = Field(default=None, description="Document pages only; ignored for Feature pages.")
+    expected_edited_at: str | None = Field(
+        default=None, description="Optimistic-concurrency check: reject if the page moved on since this timestamp."
+    )
+
+
+class DocumentCreate(BaseModel):
+    """Body for POST /apps/{app}/docs — create a manually-authored Document page."""
+
+    title: str | None = Field(default=None, description="Prepended as '# title' if the markdown has no H1.")
+    markdown: str
+    repo: str | None = Field(default=None, description="Omit for an app-level document.")
+    tags: list[str] = Field(default_factory=list)
+    category: str = Field(default="note", pattern="^(note|guide|adr|runbook|spec|other)$")
+    source_file: str | None = Field(default=None, description="Original filename, if uploaded from a .md file.")
+
+
+class RegenerateResponse(BaseModel):
+    draft: str
+    model: str | None
+    generated_at: str
+    grounding: str = Field(description="'source' (repo readable on this host) or 'graph-only'")
+    validation: ValidationResultOut
+
+
+class DocsGenerateRequest(BaseModel):
+    repo: str | None = None
+    force: bool = False
+
+
+class DocsJobOut(BaseModel):
+    job_id: str
+    app: str
+    repo: str | None
+    kind: str = "generate"
+    status: str
+    stage: str | None = None
+    stages: list[str] = Field(default_factory=list)
+    message: str | None = None
+    progress: dict[str, int] | None = None
+    target: dict[str, Any] | None = None
+    started_at: float | None = None
+    finished_at: float | None = None
+    result: dict[str, Any] | None = None
+    error: str | None = None

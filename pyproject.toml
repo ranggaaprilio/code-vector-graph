@@ -55,6 +55,7 @@ cvg-okf-build      = "code_vector_graph.cli.okf_build:main"
 cvg-okf-sync       = "code_vector_graph.cli.okf_sync:main"
 cvg-reinit-graph   = "code_vector_graph.cli.reinit_graph:main"
 cvg-backfill-repo  = "code_vector_graph.cli.backfill_repo:main"
+cvg-docs-build     = "code_vector_graph.cli.docs_build:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

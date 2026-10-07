@@ -11,6 +11,7 @@
 	const TABS = [
 		{ value: 'overview', label: 'Overview' },
 		{ value: 'files', label: 'Files' },
+		{ value: 'docs', label: 'Docs' },
 		{ value: 'wiki', label: 'Wiki' }
 	];
 

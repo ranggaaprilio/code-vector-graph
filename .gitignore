@@ -18,6 +18,8 @@ neo4j_data/
 
 # Generated output
 okf-wiki/
+# Dashboard SPA, built by `npm run build` in frontend/
+src/code_vector_graph/api/static/
 
 # Test / tooling caches
 .pytest_cache/

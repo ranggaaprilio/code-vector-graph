@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
 from code_vector_graph.api.mcp_client import init_mcp_manager, shutdown_mcp_manager
-from code_vector_graph.api.routers import apps, chat, graph, health, qdrant, search
+from code_vector_graph.api.routers import apps, chat, docs, graph, health, qdrant, search
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -52,6 +52,7 @@ app.add_middleware(
 # API routers
 app.include_router(health.router, prefix="/api", tags=["health"])
 app.include_router(apps.router, prefix="/api", tags=["apps"])
+app.include_router(docs.router, prefix="/api", tags=["docs"])
 app.include_router(qdrant.router, prefix="/api", tags=["qdrant"])
 app.include_router(graph.router, prefix="/api", tags=["graph"])
 app.include_router(search.router, prefix="/api", tags=["search"])

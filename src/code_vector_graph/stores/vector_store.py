@@ -10,6 +10,7 @@ from qdrant_client.models import (
     FieldCondition,
     Filter,
     MatchAny,
+    MatchValue,
     OptimizersConfigDiff,
     PayloadSchemaType,
     PointStruct,
@@ -210,6 +211,20 @@ class VectorStore:
             wait=wait,
         )
         return len(file_paths)
+
+    def delete_by_symbol_id(self, symbol_id: str, source: str = "okf_wiki", wait: bool = True) -> None:
+        """Delete every point tagged ``symbol_id``/``source`` (e.g. a feature's
+        stale prose chunks before re-embedding an edited/regenerated page)."""
+        if not symbol_id:
+            return
+        self.client.delete(
+            collection_name=self.collection_name,
+            points_selector=Filter(must=[
+                FieldCondition(key="symbol_id", match=MatchValue(value=symbol_id)),
+                FieldCondition(key="source", match=MatchValue(value=source)),
+            ]),
+            wait=wait,
+        )
 
     def create_collection(self) -> None:
         """

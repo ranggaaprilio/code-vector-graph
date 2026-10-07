@@ -1,20 +1,30 @@
 // API client — fetch wrappers, ported ~1:1 from the old js/api.js.
 const BASE = '/api';
 
+export class ApiError extends Error {
+	/** The raw `detail` value from a JSON error body — a string for most
+	 *  endpoints, or a structured object (e.g. `{validation: {...}}`) for the
+	 *  few that need to hand back more than a message. */
+	detail?: unknown;
+}
+
 async function req<T = unknown>(path: string, opts: RequestInit = {}): Promise<T> {
 	const res = await fetch(BASE + path, {
 		headers: { 'Content-Type': 'application/json', ...opts.headers },
 		...opts
 	});
 	if (!res.ok) {
-		let detail = `${res.status} ${res.statusText}`;
+		let detail: unknown = `${res.status} ${res.statusText}`;
 		try {
 			const j = await res.json();
-			detail = j.detail || JSON.stringify(j);
+			detail = j.detail ?? j;
 		} catch {
 			/* body wasn't JSON — keep the status line */
 		}
-		throw new Error(detail);
+		const message = typeof detail === 'string' ? detail : JSON.stringify(detail);
+		const err = new ApiError(message);
+		err.detail = detail;
+		throw err;
 	}
 	return res.json();
 }
@@ -68,6 +78,51 @@ export const getAppWiki = (name: string, params: Record<string, QueryValue> = {}
 	req(`/apps/${enc(name)}/wiki${qs(params)}`);
 export const getAppWikiPage = (name: string, conceptId: string) =>
 	req(`/apps/${enc(name)}/wiki/${enc(conceptId)}`);
+
+// Feature docs (ingestion/okf/features)
+export const getAppDocs = (name: string, params: Record<string, QueryValue> = {}) =>
+	req(`/apps/${enc(name)}/docs${qs(params)}`);
+export const getAppDoc = (name: string, featureId: string) =>
+	req(`/apps/${enc(name)}/docs/${enc(featureId)}`);
+export const validateAppDoc = (name: string, markdown: string, title?: string, type: 'Feature' | 'Document' = 'Feature') =>
+	req(`/apps/${enc(name)}/docs/validate`, { method: 'POST', body: JSON.stringify({ markdown, title, type }) });
+export const saveAppDoc = (
+	name: string,
+	featureId: string,
+	body: {
+		markdown: string;
+		tags?: string[];
+		source?: string;
+		category?: string;
+		expected_edited_at?: string | null;
+	}
+) => req(`/apps/${enc(name)}/docs/${enc(featureId)}`, { method: 'PUT', body: JSON.stringify(body) });
+export const regenerateAppDoc = (name: string, featureId: string, saveDraft = false) =>
+	req(`/apps/${enc(name)}/docs/${enc(featureId)}/regenerate${qs({ save_draft: saveDraft ? 'true' : null })}`, {
+		method: 'POST'
+	});
+export const generateAppDocs = (name: string, body: { repo?: string; force?: boolean } = {}) =>
+	req(`/apps/${enc(name)}/docs/generate`, { method: 'POST', body: JSON.stringify(body) });
+export const getDocsJob = (name: string, jobId: string) =>
+	req(`/apps/${enc(name)}/docs/jobs/${enc(jobId)}`);
+export const getLatestDocsJob = (name: string) => req(`/apps/${enc(name)}/docs/jobs`);
+
+// Manual Documents (a WikiPage {type:"Document"} — human-authored, free-form Markdown)
+export const createAppDoc = (
+	name: string,
+	body: {
+		title?: string;
+		markdown: string;
+		repo?: string | null;
+		tags?: string[];
+		category?: string;
+		source_file?: string;
+	}
+) => req(`/apps/${enc(name)}/docs`, { method: 'POST', body: JSON.stringify(body) });
+export const reindexAppDoc = (name: string, pageId: string) =>
+	req(`/apps/${enc(name)}/docs/${enc(pageId)}/reindex`, { method: 'POST' });
+export const deleteAppDoc = (name: string, pageId: string) =>
+	req(`/apps/${enc(name)}/docs/${enc(pageId)}`, { method: 'DELETE' });
 
 // Qdrant
 export const getCollections = () => req('/qdrant/collections');

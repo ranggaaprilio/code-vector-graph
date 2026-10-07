@@ -556,27 +556,6 @@
 		margin-bottom: var(--space-md);
 	}
 
-	.prose :global(p) {
-		margin: 0 0 var(--space-sm) 0;
-	}
-
-	.prose :global(pre) {
-		overflow-x: auto;
-		border: var(--border-hairline);
-		border-radius: var(--radius-md);
-		padding: var(--space-sm);
-		background: var(--color-canvas);
-	}
-
-	.prose :global(code) {
-		font-family: var(--font-mono);
-	}
-
-	.prose :global(ul),
-	.prose :global(ol) {
-		padding-left: var(--space-lg);
-	}
-
 	.how-it-works-heading {
 		margin-top: var(--space-md);
 		margin-bottom: var(--space-xs);

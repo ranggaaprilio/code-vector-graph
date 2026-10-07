@@ -506,16 +506,6 @@
 		color: var(--color-ink);
 	}
 
-	.prose :global(p) {
-		margin: 0 0 var(--space-xs) 0;
-	}
-
-	.prose :global(pre) {
-		overflow-x: auto;
-		padding: var(--space-xs);
-		border: var(--border-hairline);
-	}
-
 	.plain {
 		white-space: pre-wrap;
 	}

@@ -22,6 +22,8 @@ PROPERTY_INDEXES = (
     ("file_repo", "File", "repo"),
     ("file_app", "File", "app"),
     ("wikipage_repo", "WikiPage", "repo"),
+    ("wikipage_type", "WikiPage", "type"),
+    ("wikipage_app", "WikiPage", "app"),
 )
 
 
